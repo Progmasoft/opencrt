@@ -1,0 +1,8 @@
+-std=c99
+-ffreestanding
+-nostdinc
+-Iinclude
+-Isrc
+-Itests
+-Wall
+-Wextra
