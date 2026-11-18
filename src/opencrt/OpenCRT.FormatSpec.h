@@ -95,7 +95,7 @@ __OpenCRT_FormatSpec_KindOf(const tRaw* aIn_pRaw);
  *
  * @param[in,out] aInOut_ppAt Where it starts; moved past it.
  * @param[out]    aOut_pRaw   The specification.
- * @return false for one OpenCRT refuses: %n, an unknown conversion, a bad position or modifier.
+ * @return false for one OpenCRT refuses: an unknown conversion, a bad position or modifier.
  */
 bool
 __OpenCRT_FormatSpec_Read(const char** aInOut_ppAt, tRaw* aOut_pRaw);

@@ -102,7 +102,7 @@ __OpenCRT_Format_Float(__OpenCRT_Format_tSink*       aInOut_pSink,
  * @param[in,out] aInOut_pSink  The sink.
  * @param[in]     aIn_pFormat   The format.
  * @param[in]     aIn_Arguments The arguments.
- * @return The length of the output, or -1 with errno: EINVAL for a format OpenCRT refuses (%n, an
+ * @return The length of the output, or -1 with errno: EINVAL for a format OpenCRT refuses (an
  *         unknown conversion, positions mixed with plain ones), EILSEQ for a wide character the
  *         locale cannot write, EOVERFLOW for an output longer than INT_MAX.
  */

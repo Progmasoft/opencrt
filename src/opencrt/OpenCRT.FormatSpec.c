@@ -127,6 +127,7 @@ enum
         kCharacterClass,
         kStringClass,
         kPointerClass,
+        kCountClass,
         kClassCount,
 };
 
@@ -137,6 +138,9 @@ static const tKind kKindsByClass[ kClassCount ][ kLongDoubleLength + 1 ] = {
         [kCharacterClass] = { kInt, kNone, kNone, kWideChar, kNone, kNone, kNone, kNone, kNone },
         [kStringClass]    = { kPointer, kNone, kNone, kPointer, kNone, kNone, kNone, kNone, kNone },
         [kPointerClass]   = { kPointer, kNone, kNone, kNone, kNone, kNone, kNone, kNone, kNone },
+        /* %n takes a pointer to the type its modifier names. */
+        [kCountClass]
+        = { kPointer, kPointer, kPointer, kPointer, kPointer, kPointer, kPointer, kPointer, kNone },
 };
 
 /**
@@ -148,9 +152,9 @@ static const tKind kKindsByClass[ kClassCount ][ kLongDoubleLength + 1 ] = {
 tKind
 __OpenCRT_FormatSpec_KindOf(const tRaw* aIn_pRaw)
 {
-        static const char* const kConversions[ kClassCount ]
-                = { "diouxX", "fFeEgGaA", "c", "s", "p" };
-        char conversion = aIn_pRaw->spec.conversion;
+        static const char* const kConversions[ kClassCount ] = { "diouxX", "fFeEgGaA", "c",
+                                                                 "s",      "p",        "n" };
+        char                     conversion                  = aIn_pRaw->spec.conversion;
 
         for(int index = 0; conversion != '\0' && index < kClassCount; index++)
         {
@@ -204,7 +208,7 @@ IsValid(const tRaw* aIn_pRaw, long aWidth)
  *
  * @param[in,out] aInOut_ppAt Where it starts; moved past it.
  * @param[out]    aOut_pRaw   The specification.
- * @return false for one OpenCRT refuses: %n, an unknown conversion, a bad position or modifier.
+ * @return false for one OpenCRT refuses: an unknown conversion, a bad position or modifier.
  */
 bool
 __OpenCRT_FormatSpec_Read(const char** aInOut_ppAt, tRaw* aOut_pRaw)

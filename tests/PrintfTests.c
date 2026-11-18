@@ -130,17 +130,56 @@ CharactersAndStrings(void)
         CheckFormat(__LINE__, "\xE9", "%lc", (wint_t) 0xDFE9);
 }
 
-/** @brief %n is refused, as are unknown conversions and bad modifiers. */
+/** @brief %n stores the count so far, in the type of its modifier. */
+static void
+Counts(void)
+{
+        char        buffer[ 8 ];
+        int         count      = -1;
+        signed char small      = -1;
+        short       middle     = -1;
+        long        large      = -1;
+        long long   larger     = -1;
+        intmax_t    widest     = -1;
+        size_t      size       = 0;
+        ptrdiff_t   distance   = -1;
+        int         positional = -1;
+
+        TEST_INTEGER(snprintf(buffer, sizeof(buffer), "ab%ncd", &count), 4);
+        TEST_INTEGER(count, 2);
+        TEST_STRING(buffer, "abcd");
+        TEST_INTEGER(snprintf(buffer, sizeof(buffer), "%n", &count), 0);
+        TEST_INTEGER(count, 0);
+        /* The count is of the whole output, not of what fits. */
+        TEST_INTEGER(snprintf(buffer, 4, "abcdefgh%n!", &count), 9);
+        TEST_INTEGER(count, 8);
+        TEST_INTEGER(snprintf(buffer,
+                              sizeof(buffer),
+                              "%d%hhn%hn%ln%lln%jn%zn%tn",
+                              123,
+                              &small,
+                              &middle,
+                              &large,
+                              &larger,
+                              &widest,
+                              &size,
+                              &distance),
+                     3);
+        TEST_CHECK(small == 3 && middle == 3 && large == 3 && larger == 3);
+        TEST_CHECK(widest == 3 && size == 3 && distance == 3);
+        TEST_INTEGER(snprintf(buffer, sizeof(buffer), "%2$s%1$n", &positional, "xyz"), 3);
+        TEST_INTEGER(positional, 3);
+}
+
+/** @brief Unknown conversions and bad modifiers are refused. */
 static void
 Refusals(void)
 {
         char buffer[ 16 ] = "unchanged";
-        int  written      = 7;
 
         errno = 0;
-        TEST_INTEGER(Unchecked(buffer, sizeof(buffer), "ab%n", &written), -1);
+        TEST_INTEGER(Unchecked(buffer, sizeof(buffer), "%Ln", buffer), -1);
         TEST_INTEGER(errno, EINVAL);
-        TEST_INTEGER(written, 7);
         TEST_STRING(buffer, "");
         TEST_INTEGER(Unchecked(buffer, sizeof(buffer), "%q", 1), -1);
         TEST_INTEGER(Unchecked(buffer, sizeof(buffer), "%Ld", 1), -1);
@@ -216,15 +255,11 @@ SpecialValues(void)
 }
 
 static const Test_tCase kCases[] = {
-        { "Doubles", Doubles },
-        { "LongDoubles", LongDoubles },
-        { "Integers", Integers },
-        { "CharactersAndStrings", CharactersAndStrings },
-        { "Refusals", Refusals },
-        { "Positions", Positions },
-        { "Truncation", Truncation },
-        { "Hexadecimal", Hexadecimal },
-        { "SpecialValues", SpecialValues },
+        { "Doubles", Doubles },         { "LongDoubles", LongDoubles },
+        { "Integers", Integers },       { "CharactersAndStrings", CharactersAndStrings },
+        { "Counts", Counts },           { "Refusals", Refusals },
+        { "Positions", Positions },     { "Truncation", Truncation },
+        { "Hexadecimal", Hexadecimal }, { "SpecialValues", SpecialValues },
 };
 
 TEST_SUITE(gTest_Printf, kCases);

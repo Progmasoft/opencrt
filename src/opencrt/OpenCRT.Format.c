@@ -16,8 +16,8 @@
 #include "opencrt/OpenCRT.FormatSpec.h"
 
 /*
- * The output of the printf engine. %n is refused when the format is read: it lets a format write to
- * memory, the path of format string attacks.
+ * The output of the printf engine, every conversion of C99 included: %n stores how many bytes the
+ * output has so far, in the type its length modifier names.
  */
 
 /**
@@ -340,6 +340,50 @@ WriteCharacter(__OpenCRT_Format_tSink* aInOut_pSink, const tRaw* aIn_pRaw, long 
 }
 
 /**
+ * @brief Writes %n: stores how many bytes the output has so far, in the type its modifier names.
+ *
+ * @param[in] aIn_pSink   The sink, whose length is the count.
+ * @param[in] aLength     The length modifier.
+ * @param[in] aIn_pTarget Where the count goes; a null pointer stores nothing.
+ */
+static void
+WriteCount(const __OpenCRT_Format_tSink* aIn_pSink, tLength aLength, const void* aIn_pTarget)
+{
+        size_t count   = aIn_pSink->length;
+        void*  pTarget = (void*) (uintptr_t) aIn_pTarget;
+
+        if(pTarget == NULL)
+                return;
+        switch(aLength)
+        {
+        case kChar:
+                *(signed char*) pTarget = (signed char) count;
+                break;
+        case kShort:
+                *(short*) pTarget = (short) count;
+                break;
+        case kLongLength:
+                *(long*) pTarget = (long) count;
+                break;
+        case kLongLongLength:
+                *(long long*) pTarget = (long long) count;
+                break;
+        case kIntMaxLength:
+                *(intmax_t*) pTarget = (intmax_t) count;
+                break;
+        case kSizeLength:
+                *(size_t*) pTarget = count;
+                break;
+        case kPtrdiffLength:
+                *(ptrdiff_t*) pTarget = (ptrdiff_t) count;
+                break;
+        default:
+                *(int*) pTarget = (int) count;
+                break;
+        }
+}
+
+/**
  * @brief Reads the width and the precision a * asks for: a negative width is the - flag, a negative
  *        precision none.
  *
@@ -391,7 +435,9 @@ WriteConversion(__OpenCRT_Format_tSink* aInOut_pSink, tRaw* aIn_pRaw, tArguments
                 return (WriteCharacter(aInOut_pSink, aIn_pRaw, value.integer));
         if(conversion == 's')
                 return (WriteString(aInOut_pSink, aIn_pRaw, value.pPointer));
-        if(conversion == 'p')
+        if(conversion == 'n')
+                WriteCount(aInOut_pSink, aIn_pRaw->length, value.pPointer);
+        else if(conversion == 'p')
                 WritePointer(aInOut_pSink, aIn_pRaw, value.pPointer);
         else if(strchr("diouxX", conversion) != NULL)
                 WriteInteger(aInOut_pSink, aIn_pRaw, value.integer);

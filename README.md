@@ -36,8 +36,8 @@ family with every conversion, positions (`%1$s`) and exact floating point, `long
 
 Where a choice was open, security came first, then Unix and POSIX, then speed:
 
-- `printf` refuses `%n`, which lets a format write to memory; the call returns -1 with `EINVAL`. `%s` of NULL
-  writes `(null)`.
+- `printf` has every conversion of C99, `%n` included, with every length modifier. `%s` of NULL writes
+  `(null)`.
 - `qsort` is an introsort: O(n log n) for every input, so no input can make it quadratic.
 - The C locale is single-byte, as POSIX has it; the bytes 0x80 to 0xFF map to U+DF80 to U+DFFF, so a byte is never
   taken for a Unicode character.
