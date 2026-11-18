@@ -197,6 +197,12 @@ ExactScaling(void)
         CheckDouble(__LINE__, modf(-3.25, &whole), -0.25);
         CheckDouble(__LINE__, whole, -3.0);
         CheckDouble(__LINE__, modf(-INFINITY, &whole), -0.0);
+}
+
+/** @brief fmod, at its edges. */
+static void
+ExactRemainders(void)
+{
         CheckDouble(__LINE__, fmod(5.5, 2.0), 1.5);
         CheckDouble(__LINE__, fmod(-5.5, 2.0), -1.5);
         CheckDouble(__LINE__, fmod(1e300, 3.0), 0.0);
@@ -340,6 +346,7 @@ static const Test_tCase kCases[] = {
         { "Locales", Locales },
         { "ExactMath", ExactMath },
         { "ExactScaling", ExactScaling },
+        { "ExactRemainders", ExactRemainders },
         { "Dates", Dates },
         { "Formats", Formats },
 };

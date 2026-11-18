@@ -265,8 +265,10 @@ size_t
 mbstowcs(wchar_t* restrict aOut_pWide, const char* restrict aIn_pBytes, size_t aCount)
 {
         const char* pBytes = aIn_pBytes;
+        mbstate_t   state;
 
-        return (mbsrtowcs(aOut_pWide, &pBytes, aCount, NULL));
+        memset(&state, 0, sizeof(state));
+        return (mbsrtowcs(aOut_pWide, &pBytes, aCount, &state));
 }
 
 /**
@@ -281,6 +283,8 @@ size_t
 wcstombs(char* restrict aOut_pBytes, const wchar_t* restrict aIn_pWide, size_t aCount)
 {
         const wchar_t* pWide = aIn_pWide;
+        mbstate_t      state;
 
-        return (wcsrtombs(aOut_pBytes, &pWide, aCount, NULL));
+        memset(&state, 0, sizeof(state));
+        return (wcsrtombs(aOut_pBytes, &pWide, aCount, &state));
 }

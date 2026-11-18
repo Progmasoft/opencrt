@@ -5,6 +5,7 @@
 
 #include <limits.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -539,6 +540,28 @@ Normalized(uint64_t aBits, int* aOut_pExponent)
 }
 
 /**
+ * @brief The result of fmod where no division is needed.
+ *
+ * @param[in]  aDividend    x.
+ * @param[in]  aDivisor     y.
+ * @param[out] aOut_pResult The result, when there is one.
+ * @return true when x or y decides the result alone: a NaN (raising the invalid exception) when y
+ *         is 0, x is an infinity or either is a NaN; x itself when y is an infinity or |x| < |y|.
+ */
+static bool
+FmodSpecial(double aDividend, double aDivisor, double* aOut_pResult)
+{
+        if(isnan(aDividend) || isnan(aDivisor) || isinf(aDividend) || aDivisor == 0)
+        {
+                /* 0 / 0 or infinity / infinity in the arithmetic, so the exception is raised. */
+                *aOut_pResult = (aDividend * aDivisor) / (aDivisor * aDividend);
+                return (true);
+        }
+        *aOut_pResult = aDividend;
+        return (isinf(aDivisor) || fabs(aDividend) < fabs(aDivisor));
+}
+
+/**
  * @brief The remainder of x / y with the quotient rounded toward zero, exact.
  *
  * @param[in] aDividend x.
@@ -548,10 +571,10 @@ Normalized(uint64_t aBits, int* aOut_pExponent)
 double
 fmod(double aDividend, double aDivisor)
 {
-        if(isnan(aDividend) || isnan(aDivisor) || isinf(aDividend) || aDivisor == 0)
-                return ((aDividend * aDivisor) / (aDividend * aDivisor));
-        if(isinf(aDivisor) || fabs(aDividend) < fabs(aDivisor))
-                return (aDividend);
+        double special;
+
+        if(FmodSpecial(aDividend, aDivisor, &special))
+                return (special);
         int      xExponent;
         int      yExponent;
         uint64_t x = Normalized(BitsOf(aDividend), &xExponent);

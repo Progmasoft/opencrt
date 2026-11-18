@@ -526,7 +526,47 @@ static const tExpansion kExpansions[] = {
 };
 
 /**
- * @brief Writes a conversion of names or zones: a, A, b, B, h, p, z or Z.
+ * @brief Writes a, A, b, B or h: the name of the weekday or the month, whole or in three letters.
+ *
+ * @param[in,out] aInOut_pOutput The output.
+ * @param[in]     aConversion    The character after %.
+ * @param[in]     aIn_pTm        The fields.
+ */
+static void
+WriteName(tOutput* aInOut_pOutput, char aConversion, const struct tm* aIn_pTm)
+{
+        char        text[ 4 ];
+        bool        isDay = aConversion == 'a' || aConversion == 'A';
+        const char* pName = isDay ? Name(kWeekdays, 7, aIn_pTm->tm_wday)
+                                  : Name(kMonths, 12, aIn_pTm->tm_mon);
+
+        snprintf(text, sizeof(text), "%.3s", pName);
+        Append(aInOut_pOutput, aConversion == 'A' || aConversion == 'B' ? pName : text);
+}
+
+/**
+ * @brief Writes z: the offset from UTC as +hhmm or -hhmm.
+ *
+ * @param[in,out] aInOut_pOutput The output.
+ * @param[in]     aIn_pTm        The fields.
+ */
+static void
+WriteOffset(tOutput* aInOut_pOutput, const struct tm* aIn_pTm)
+{
+        char text[ 16 ];
+        long offset = labs(aIn_pTm->tm_gmtoff);
+
+        snprintf(text,
+                 sizeof(text),
+                 "%c%02ld%02ld",
+                 aIn_pTm->tm_gmtoff < 0 ? '-' : '+',
+                 offset / 3600 % 100,
+                 offset / 60 % 60);
+        Append(aInOut_pOutput, text);
+}
+
+/**
+ * @brief Writes a conversion of names or zones: a, A, b, B, h, p, z, Z or %.
  *
  * @param[in,out] aInOut_pOutput The output.
  * @param[in]     aConversion    The character after %.
@@ -536,36 +576,17 @@ static const tExpansion kExpansions[] = {
 static bool
 ConvertText(tOutput* aInOut_pOutput, char aConversion, const struct tm* aIn_pTm)
 {
-        char text[ 16 ];
-
-        if(strchr("aA", aConversion) != NULL || strchr("bBh", aConversion) != NULL)
-        {
-                bool        isDay = aConversion == 'a' || aConversion == 'A';
-                const char* pName = isDay ? Name(kWeekdays, 7, aIn_pTm->tm_wday)
-                                          : Name(kMonths, 12, aIn_pTm->tm_mon);
-
-                snprintf(text, sizeof(text), "%.3s", pName);
-                Append(aInOut_pOutput, aConversion == 'A' || aConversion == 'B' ? pName : text);
-                return (true);
-        }
-        if(aConversion == '%')
+        if(strchr("aAbBh", aConversion) != NULL)
+                WriteName(aInOut_pOutput, aConversion, aIn_pTm);
+        else if(aConversion == 'z')
+                WriteOffset(aInOut_pOutput, aIn_pTm);
+        else if(aConversion == '%')
                 Append(aInOut_pOutput, "%");
         else if(aConversion == 'p')
                 Append(aInOut_pOutput, aIn_pTm->tm_hour < 12 ? "AM" : "PM");
         else if(aConversion == 'Z')
                 Append(aInOut_pOutput, aIn_pTm->tm_zone != NULL ? aIn_pTm->tm_zone : "UTC");
-        else if(aConversion == 'z')
-        {
-                long offset = labs(aIn_pTm->tm_gmtoff);
-
-                snprintf(text,
-                         sizeof(text),
-                         "%c%02ld%02ld",
-                         aIn_pTm->tm_gmtoff < 0 ? '-' : '+',
-                         offset / 3600 % 100,
-                         offset / 60 % 60);
-                Append(aInOut_pOutput, text);
-        } else
+        else
                 return (false);
         return (true);
 }

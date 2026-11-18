@@ -639,6 +639,31 @@ ToHexadecimal(const __OpenCRT_Format_tSpec* aIn_pSpec,
 }
 
 /**
+ * @brief The body of an a conversion: the leading digit, the point when one is written, and the
+ *        fraction.
+ *
+ * @param[in]  aIn_pSpec The specification.
+ * @param[in]  aIn_pHex  The digits.
+ * @param[in]  aZeros    The zeros the precision adds after the fraction.
+ * @param[out] aOut_pBody At least 18 bytes.
+ * @return The length of the body.
+ */
+static size_t
+HexadecimalBody(const __OpenCRT_Format_tSpec* aIn_pSpec,
+                const tHexadecimal*           aIn_pHex,
+                long                          aZeros,
+                char*                         aOut_pBody)
+{
+        size_t length = 0;
+
+        aOut_pBody[ length++ ] = aIn_pHex->leading;
+        if(aIn_pHex->count > 0 || aZeros > 0 || aIn_pSpec->isAlternate)
+                aOut_pBody[ length++ ] = '.';
+        memcpy(aOut_pBody + length, aIn_pHex->fraction, (size_t) aIn_pHex->count);
+        return (length + (size_t) aIn_pHex->count);
+}
+
+/**
  * @brief Writes an a or A conversion: 0x1.hhhp+d, normalized, rounded to the precision, ties to even.
  *
  * @param[in,out] aInOut_pSink The sink.
@@ -657,24 +682,18 @@ WriteHexadecimal(__OpenCRT_Format_tSink*       aInOut_pSink,
         tText        exponentText;
         char         prefix[ 8 ];
         char         body[ 24 ];
-        size_t       length = 0;
 
         ToHexadecimal(aIn_pSpec, aIn_pParts, &hex);
         long zeros = aIn_pSpec->precision > hex.count ? aIn_pSpec->precision - hex.count : 0;
 
         Exponent(&exponentText, isUpper ? 'P' : 'p', hex.exponent, 1);
         strcpy(stpcpy(prefix, aIn_pPrefix), isUpper ? "0X" : "0x");
-        body[ length++ ] = hex.leading;
-        if(hex.count > 0 || zeros > 0 || aIn_pSpec->isAlternate)
-                body[ length++ ] = '.';
-        memcpy(body + length, hex.fraction, (size_t) hex.count);
-        length           += (size_t) hex.count;
+        size_t length     = HexadecimalBody(aIn_pSpec, &hex, zeros, body);
         size_t total      = strlen(prefix) + length + (size_t) zeros + exponentText.length;
         size_t fill       = aIn_pSpec->width > total ? aIn_pSpec->width - total : 0;
         bool   isZeroFill = aIn_pSpec->isZero && !aIn_pSpec->isLeft;
 
-        if(!aIn_pSpec->isLeft && !isZeroFill)
-                __OpenCRT_Format_Repeat(aInOut_pSink, ' ', fill);
+        __OpenCRT_Format_Repeat(aInOut_pSink, ' ', aIn_pSpec->isLeft || isZeroFill ? 0 : fill);
         __OpenCRT_Format_Put(aInOut_pSink, prefix, strlen(prefix));
         __OpenCRT_Format_Repeat(aInOut_pSink, '0', isZeroFill ? fill : 0);
         __OpenCRT_Format_Put(aInOut_pSink, body, length);

@@ -176,6 +176,21 @@ IntegerPrefix(const __OpenCRT_Format_tSpec* aIn_pSpec, bool aIsNegative, bool aI
 }
 
 /**
+ * @brief The zeros the 0 flag adds to reach the width, when no precision is given.
+ *
+ * @param[in] aIn_pSpec The specification.
+ * @param[in] aUsed     What the field holds already.
+ * @return How many zeros.
+ */
+static size_t
+ZeroFill(const __OpenCRT_Format_tSpec* aIn_pSpec, size_t aUsed)
+{
+        bool isFilled = aIn_pSpec->isZero && !aIn_pSpec->isLeft && aIn_pSpec->precision < 0;
+
+        return (isFilled && aIn_pSpec->width > aUsed ? aIn_pSpec->width - aUsed : 0);
+}
+
+/**
  * @brief The zeros between the prefix and the digits: for the precision, for # with o, and for
  *        the 0 flag up to the width.
  *
@@ -193,14 +208,11 @@ IntegerZeros(const __OpenCRT_Format_tSpec* aIn_pSpec,
 {
         size_t precision = aIn_pSpec->precision < 0 ? 1 : (size_t) aIn_pSpec->precision;
         size_t zeros     = precision > aLength ? precision - aLength : 0;
-
         /* # puts a 0 before octal digits that do not already start with one. */
-        if(aIn_pSpec->isAlternate && aIn_pSpec->conversion == 'o' && zeros == 0)
-                zeros = aLength == 0 || aIn_pDigits[ 0 ] != '0';
-        size_t used     = aPrefix + zeros + aLength;
-        bool   isFilled = aIn_pSpec->isZero && !aIn_pSpec->isLeft && aIn_pSpec->precision < 0;
+        bool needsOctalZero = aIn_pSpec->isAlternate && aIn_pSpec->conversion == 'o' && zeros == 0;
 
-        return (isFilled && aIn_pSpec->width > used ? zeros + aIn_pSpec->width - used : zeros);
+        zeros += needsOctalZero && (aLength == 0 || aIn_pDigits[ 0 ] != '0');
+        return (zeros + ZeroFill(aIn_pSpec, aPrefix + zeros + aLength));
 }
 
 /**
