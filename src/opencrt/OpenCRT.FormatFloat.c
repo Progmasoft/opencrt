@@ -181,6 +181,56 @@ ToDecimal(const tParts* aIn_pParts, tDecimal* aOut_pDecimal)
 }
 
 /**
+ * @brief Whether rounding a decimal to its first digits goes up: to nearest, ties to even.
+ *
+ * @param[in] aIn_pDecimal The digits.
+ * @param[in] aKeep        How many digits are kept, below the count; may be 0 or negative.
+ * @return true when the kept digits go up by one unit of their last place.
+ */
+static bool
+IsRoundingUp(const tDecimal* aIn_pDecimal, long aKeep)
+{
+        const char* pDigits = aIn_pDecimal->digits;
+
+        /* Before the first digit, the digit cut is a zero. */
+        if(aKeep < 0)
+                return (false);
+        char next     = pDigits[ aKeep ];
+        bool isSticky = false;
+
+        for(size_t index = (size_t) aKeep + 1; index < aIn_pDecimal->count && !isSticky; index++)
+                isSticky = pDigits[ index ] != '0';
+        bool isOdd = aKeep > 0 && (pDigits[ aKeep - 1 ] - '0') % 2 != 0;
+
+        return (next > '5' || (next == '5' && (isSticky || isOdd)));
+}
+
+/**
+ * @brief Adds one unit to the last of the digits of a decimal, carrying: 99.9 becomes 100.
+ *
+ * @param[in,out] aInOut_pDecimal The digits.
+ */
+static void
+Increment(tDecimal* aInOut_pDecimal)
+{
+        char* pDigits = aInOut_pDecimal->digits;
+        bool  isCarry = true;
+
+        for(long index = (long) aInOut_pDecimal->count - 1; isCarry && index >= 0; index--)
+        {
+                isCarry          = pDigits[ index ] == '9';
+                pDigits[ index ] = isCarry ? '0' : (char) (pDigits[ index ] + 1);
+        }
+        if(isCarry)
+        {
+                /* All nines: a 1 before them, one place more before the point. */
+                pDigits[ 0 ]                        = '1';
+                pDigits[ aInOut_pDecimal->count++ ] = '0';
+                aInOut_pDecimal->point++;
+        }
+}
+
+/**
  * @brief Keeps the first digits of a decimal and rounds the rest away, to nearest, ties to even.
  *
  * Keeping none or fewer rounds to zero, which leaves no digits, or to one unit of the place just
@@ -192,48 +242,24 @@ ToDecimal(const tParts* aIn_pParts, tDecimal* aOut_pDecimal)
 static void
 Round(tDecimal* aInOut_pDecimal, long aKeep)
 {
-        char* pDigits = aInOut_pDecimal->digits;
-
         if(aKeep >= (long) aInOut_pDecimal->count)
                 return;
-        bool isUp = false;
+        bool isUp = IsRoundingUp(aInOut_pDecimal, aKeep);
 
-        if(aKeep >= 0)
+        if(aKeep > 0)
         {
-                char next     = pDigits[ aKeep ];
-                bool isSticky = false;
-
-                for(size_t index = (size_t) aKeep + 1; index < aInOut_pDecimal->count && !isSticky;
-                    index++)
-                        isSticky = pDigits[ index ] != '0';
-                bool isOdd = aKeep > 0 && (pDigits[ aKeep - 1 ] - '0') % 2 != 0;
-
-                isUp = next > '5' || (next == '5' && (isSticky || isOdd));
-        }
-        if(aKeep <= 0)
-        {
-                /* Nothing kept: zero, or one unit of the place before the first digit. */
-                aInOut_pDecimal->count = 0;
+                aInOut_pDecimal->count = (size_t) aKeep;
                 if(isUp)
-                {
-                        pDigits[ 0 ]            = '1';
-                        aInOut_pDecimal->count  = 1;
-                        aInOut_pDecimal->point += 1 - aKeep;
-                }
+                        Increment(aInOut_pDecimal);
                 return;
         }
-        aInOut_pDecimal->count = (size_t) aKeep;
-        for(long index = aKeep - 1; isUp && index >= 0; index--)
-        {
-                isUp             = pDigits[ index ] == '9';
-                pDigits[ index ] = isUp ? '0' : (char) (pDigits[ index ] + 1);
-        }
+        /* Nothing kept: zero, or one unit of the place before the first digit. */
+        aInOut_pDecimal->count = 0;
         if(isUp)
         {
-                /* 99.9 rounded up: 100, one place more before the point. */
-                pDigits[ 0 ]                        = '1';
-                pDigits[ aInOut_pDecimal->count++ ] = '0';
-                aInOut_pDecimal->point++;
+                aInOut_pDecimal->digits[ 0 ] = '1';
+                aInOut_pDecimal->count       = 1;
+                aInOut_pDecimal->point      += 1 - aKeep;
         }
 }
 
@@ -438,6 +464,48 @@ TrimmedFraction(const tDecimal* aIn_pDecimal, long aFirst, long aCount)
 }
 
 /**
+ * @brief Rounds and lays out a g conversion: f or e by the exponent, trailing zeros dropped unless #.
+ *
+ * @param[in,out] aInOut_pDecimal The digits.
+ * @param[in]     aIn_pSpec       The specification.
+ * @param[in]     aPrecision      The precision, 6 when left out.
+ * @param[in]     aLetter         e or E.
+ * @param[out]    aOut_pLayout    The layout.
+ */
+static void
+LayoutGeneral(tDecimal*                     aInOut_pDecimal,
+              const __OpenCRT_Format_tSpec* aIn_pSpec,
+              long                          aPrecision,
+              char                          aLetter,
+              tLayout*                      aOut_pLayout)
+{
+        long significant = aPrecision == 0 ? 1 : aPrecision;
+
+        Round(aInOut_pDecimal, significant);
+        long exponent = aInOut_pDecimal->count == 0 ? 0 : aInOut_pDecimal->point - 1;
+
+        if(exponent < significant && exponent >= -4)
+                LayoutFixed(aInOut_pDecimal,
+                            significant - 1 - exponent,
+                            aIn_pSpec->isAlternate,
+                            aOut_pLayout);
+        else
+                LayoutExponent(aInOut_pDecimal,
+                               significant - 1,
+                               aIn_pSpec->isAlternate,
+                               aLetter,
+                               aOut_pLayout);
+        if(aIn_pSpec->isAlternate)
+                return;
+        long first = aOut_pLayout->integerFirst + aOut_pLayout->integerCount;
+
+        aOut_pLayout->fractionCount = TrimmedFraction(aInOut_pDecimal,
+                                                      first,
+                                                      aOut_pLayout->fractionCount);
+        aOut_pLayout->hasPoint      = aOut_pLayout->fractionCount > 0;
+}
+
+/**
  * @brief Writes an f, e or g conversion of a finite value.
  *
  * @param[in,out] aInOut_pSink The sink.
@@ -451,55 +519,27 @@ WriteDecimal(__OpenCRT_Format_tSink*       aInOut_pSink,
              const tParts*                 aIn_pParts,
              const char*                   aIn_pPrefix)
 {
-        tDecimal  decimal;
-        tDecimal* pDecimal   = &decimal;
-        char      conversion = (char) (aIn_pSpec->conversion | 0x20);
-        long      precision  = aIn_pSpec->precision < 0 ? 6 : aIn_pSpec->precision;
-        char      letter = aIn_pSpec->conversion == 'E' || aIn_pSpec->conversion == 'G' ? 'E' : 'e';
-        tLayout   layout;
+        tDecimal decimal;
+        char     conversion = (char) (aIn_pSpec->conversion | 0x20);
+        long     precision  = aIn_pSpec->precision < 0 ? 6 : aIn_pSpec->precision;
+        char     letter = aIn_pSpec->conversion == 'E' || aIn_pSpec->conversion == 'G' ? 'E' : 'e';
+        tLayout  layout;
 
-        pDecimal->count = 0;
-        pDecimal->point = 1;
+        decimal.count = 0;
+        decimal.point = 1;
         if(aIn_pParts->mantissa != 0)
-                ToDecimal(aIn_pParts, pDecimal);
+                ToDecimal(aIn_pParts, &decimal);
         if(conversion == 'f')
         {
-                Round(pDecimal, pDecimal->point + precision);
-                LayoutFixed(pDecimal, precision, aIn_pSpec->isAlternate, &layout);
+                Round(&decimal, decimal.point + precision);
+                LayoutFixed(&decimal, precision, aIn_pSpec->isAlternate, &layout);
         } else if(conversion == 'e')
         {
-                Round(pDecimal, precision + 1);
-                LayoutExponent(pDecimal, precision, aIn_pSpec->isAlternate, letter, &layout);
+                Round(&decimal, precision + 1);
+                LayoutExponent(&decimal, precision, aIn_pSpec->isAlternate, letter, &layout);
         } else
-        {
-                long significant = precision == 0 ? 1 : precision;
-
-                Round(pDecimal, significant);
-                long exponent = pDecimal->count == 0 ? 0 : pDecimal->point - 1;
-
-                if(exponent < significant && exponent >= -4)
-                {
-                        LayoutFixed(pDecimal,
-                                    significant - 1 - exponent,
-                                    aIn_pSpec->isAlternate,
-                                    &layout);
-                } else
-                        LayoutExponent(pDecimal,
-                                       significant - 1,
-                                       aIn_pSpec->isAlternate,
-                                       letter,
-                                       &layout);
-                if(!aIn_pSpec->isAlternate)
-                {
-                        long first = layout.integerFirst + layout.integerCount;
-
-                        layout.fractionCount = TrimmedFraction(pDecimal,
-                                                               first,
-                                                               layout.fractionCount);
-                        layout.hasPoint      = layout.fractionCount > 0;
-                }
-        }
-        WriteLayout(aInOut_pSink, aIn_pSpec, aIn_pPrefix, pDecimal, &layout);
+                LayoutGeneral(&decimal, aIn_pSpec, precision, letter, &layout);
+        WriteLayout(aInOut_pSink, aIn_pSpec, aIn_pPrefix, &decimal, &layout);
 }
 
 /**
@@ -520,20 +560,26 @@ RoundHexadecimal(uint64_t    aFraction,
                  char*       aOut_pText,
                  char*       aOut_pLeading)
 {
-        int      dropped = 64 - 4 * aKeep;
-        uint64_t kept    = aKeep == 0 ? 0 : aFraction >> dropped;
-        uint64_t rest    = aKeep == 16 ? 0
-                : aKeep == 0           ? aFraction
-                                       : aFraction & ((UINT64_C(1) << dropped) - 1);
-        uint64_t half    = aKeep == 16 ? 0 : UINT64_C(1) << (dropped - 1);
-        /* With no digit kept, the digit before the cut is the leading 1, which is odd. */
-        bool isOdd = aKeep == 0 || (kept & 1) != 0;
+        uint64_t kept = aFraction;
 
         *aOut_pLeading = '1';
-        if(aKeep < 16 && (rest > half || (rest == half && isOdd)))
+        if(aKeep == 0)
         {
-                kept++;
-                if(aKeep == 0 || kept >> (4 * aKeep) != 0)
+                /* The cut follows the leading 1, which is odd: a half or more makes it 2. */
+                if(aFraction >= UINT64_C(1) << 63)
+                        *aOut_pLeading = '2';
+                return (0);
+        }
+        if(aKeep < 16)
+        {
+                int      dropped = 64 - 4 * aKeep;
+                uint64_t rest    = aFraction & ((UINT64_C(1) << dropped) - 1);
+                uint64_t half    = UINT64_C(1) << (dropped - 1);
+
+                kept = aFraction >> dropped;
+                if(rest > half || (rest == half && (kept & 1) != 0))
+                        kept++;
+                if(kept >> (4 * aKeep) != 0)
                 {
                         kept           = 0;
                         *aOut_pLeading = '2';
@@ -542,6 +588,54 @@ RoundHexadecimal(uint64_t    aFraction,
         for(int digit = 0; digit < aKeep; digit++)
                 aOut_pText[ digit ] = aIn_pDigits[ (kept >> (4 * (aKeep - 1 - digit))) & 0xF ];
         return (aKeep);
+}
+
+/** The parts of an a conversion before it is laid out. */
+typedef struct Hexadecimal
+{
+        char leading;
+        char fraction[ 16 ];
+        int  count;
+        long exponent;
+} tHexadecimal;
+
+/**
+ * @brief The digits and the exponent of an a conversion, normalized and rounded to the precision.
+ *
+ * @param[in]  aIn_pSpec    The specification.
+ * @param[in]  aIn_pParts   The value.
+ * @param[out] aOut_pHex    The digits and the exponent.
+ */
+static void
+ToHexadecimal(const __OpenCRT_Format_tSpec* aIn_pSpec,
+              const tParts*                 aIn_pParts,
+              tHexadecimal*                 aOut_pHex)
+{
+        const char* pDigits  = aIn_pSpec->conversion == 'A' ? "0123456789ABCDEF"
+                                                            : "0123456789abcdef";
+        uint64_t    mantissa = aIn_pParts->mantissa;
+
+        aOut_pHex->leading  = '0';
+        aOut_pHex->count    = 0;
+        aOut_pHex->exponent = 0;
+        if(mantissa == 0)
+                return;
+        /* Put the leading one in bit 63: the 16 hex digits below it are the fraction. */
+        int shift = __builtin_clzll(mantissa);
+        int keep  = aIn_pSpec->precision < 0 || aIn_pSpec->precision > 16
+                ? 16
+                : (int) aIn_pSpec->precision;
+
+        mantissa          <<= shift;
+        aOut_pHex->exponent = (long) aIn_pParts->exponent + 63 - shift;
+        aOut_pHex->count    = RoundHexadecimal(mantissa << 1,
+                                               keep,
+                                               pDigits,
+                                               aOut_pHex->fraction,
+                                               &aOut_pHex->leading);
+        while(aIn_pSpec->precision < 0 && aOut_pHex->count > 0
+              && aOut_pHex->fraction[ aOut_pHex->count - 1 ] == '0')
+                aOut_pHex->count--;
 }
 
 /**
@@ -558,45 +652,23 @@ WriteHexadecimal(__OpenCRT_Format_tSink*       aInOut_pSink,
                  const tParts*                 aIn_pParts,
                  const char*                   aIn_pPrefix)
 {
-        bool        isUpper  = aIn_pSpec->conversion == 'A';
-        const char* pDigits  = isUpper ? "0123456789ABCDEF" : "0123456789abcdef";
-        uint64_t    mantissa = aIn_pParts->mantissa;
-        long        exponent = 0;
-        char        fraction[ 16 ];
-        char        leading = '0';
-        int         count   = 0;
+        bool         isUpper = aIn_pSpec->conversion == 'A';
+        tHexadecimal hex;
+        tText        exponentText;
+        char         prefix[ 8 ];
+        char         body[ 24 ];
+        size_t       length = 0;
 
-        if(mantissa != 0)
-        {
-                /* Put the leading one in bit 63: the 16 hex digits below it are the fraction. */
-                int shift = __builtin_clzll(mantissa);
+        ToHexadecimal(aIn_pSpec, aIn_pParts, &hex);
+        long zeros = aIn_pSpec->precision > hex.count ? aIn_pSpec->precision - hex.count : 0;
 
-                mantissa <<= shift;
-                exponent   = (long) aIn_pParts->exponent + 63 - shift;
-                int keep   = aIn_pSpec->precision < 0 || aIn_pSpec->precision > 16
-                        ? 16
-                        : (int) aIn_pSpec->precision;
-
-                count = RoundHexadecimal(mantissa << 1, keep, pDigits, fraction, &leading);
-                if(aIn_pSpec->precision < 0)
-                {
-                        while(count > 0 && fraction[ count - 1 ] == '0')
-                                count--;
-                }
-        }
-        long   zeros = aIn_pSpec->precision > count ? aIn_pSpec->precision - count : 0;
-        tText  exponentText;
-        char   prefix[ 8 ];
-        char   body[ 64 ];
-        size_t length = 0;
-
-        Exponent(&exponentText, isUpper ? 'P' : 'p', exponent, 1);
+        Exponent(&exponentText, isUpper ? 'P' : 'p', hex.exponent, 1);
         strcpy(stpcpy(prefix, aIn_pPrefix), isUpper ? "0X" : "0x");
-        body[ length++ ] = leading;
-        if(count > 0 || zeros > 0 || aIn_pSpec->isAlternate)
+        body[ length++ ] = hex.leading;
+        if(hex.count > 0 || zeros > 0 || aIn_pSpec->isAlternate)
                 body[ length++ ] = '.';
-        memcpy(body + length, fraction, (size_t) count);
-        length           += (size_t) count;
+        memcpy(body + length, hex.fraction, (size_t) hex.count);
+        length           += (size_t) hex.count;
         size_t total      = strlen(prefix) + length + (size_t) zeros + exponentText.length;
         size_t fill       = aIn_pSpec->width > total ? aIn_pSpec->width - total : 0;
         bool   isZeroFill = aIn_pSpec->isZero && !aIn_pSpec->isLeft;
@@ -604,13 +676,39 @@ WriteHexadecimal(__OpenCRT_Format_tSink*       aInOut_pSink,
         if(!aIn_pSpec->isLeft && !isZeroFill)
                 __OpenCRT_Format_Repeat(aInOut_pSink, ' ', fill);
         __OpenCRT_Format_Put(aInOut_pSink, prefix, strlen(prefix));
-        if(isZeroFill)
-                __OpenCRT_Format_Repeat(aInOut_pSink, '0', fill);
+        __OpenCRT_Format_Repeat(aInOut_pSink, '0', isZeroFill ? fill : 0);
         __OpenCRT_Format_Put(aInOut_pSink, body, length);
         __OpenCRT_Format_Repeat(aInOut_pSink, '0', (size_t) zeros);
         __OpenCRT_Format_Put(aInOut_pSink, exponentText.bytes, exponentText.length);
-        if(aIn_pSpec->isLeft)
-                __OpenCRT_Format_Repeat(aInOut_pSink, ' ', fill);
+        __OpenCRT_Format_Repeat(aInOut_pSink, ' ', aIn_pSpec->isLeft ? fill : 0);
+}
+
+/**
+ * @brief Writes an infinity or a NaN: its sign and inf or nan, padded with spaces, never zeros,
+ *        which would read as digits.
+ *
+ * @param[in,out] aInOut_pSink The sink.
+ * @param[in]     aIn_pSpec    The specification.
+ * @param[in]     aIn_pParts   The value.
+ * @param[in]     aIn_pPrefix  The sign.
+ */
+static void
+WriteSpecial(__OpenCRT_Format_tSink*       aInOut_pSink,
+             const __OpenCRT_Format_tSpec* aIn_pSpec,
+             const tParts*                 aIn_pParts,
+             const char*                   aIn_pPrefix)
+{
+        static const char* const kWords[ 2 ][ 2 ] = { { "inf", "INF" }, { "nan", "NAN" } };
+        __OpenCRT_Format_tSpec   spaces           = *aIn_pSpec;
+        bool isUpper = aIn_pSpec->conversion >= 'A' && aIn_pSpec->conversion <= 'Z';
+
+        spaces.isZero = false;
+        __OpenCRT_Format_Field(aInOut_pSink,
+                               &spaces,
+                               aIn_pPrefix,
+                               0,
+                               kWords[ aIn_pParts->isNan ][ isUpper ],
+                               3);
 }
 
 /**
@@ -626,23 +724,13 @@ __OpenCRT_Format_Float(__OpenCRT_Format_tSink*       aInOut_pSink,
                        long double                   aValue)
 {
         tParts      parts;
-        bool        isUpper = aIn_pSpec->conversion >= 'A' && aIn_pSpec->conversion <= 'Z';
         const char* pPrefix;
 
         Split(aValue, &parts);
         pPrefix = parts.isNegative ? "-" : aIn_pSpec->isPlus ? "+" : aIn_pSpec->isSpace ? " " : "";
         if(parts.isInfinite || parts.isNan)
-        {
-                __OpenCRT_Format_tSpec spaces = *aIn_pSpec;
-                const char*            pWord  = parts.isNan ? (isUpper ? "NAN" : "nan")
-                                                            : (isUpper ? "INF" : "inf");
-
-                /* Zeros would read as digits: an infinity or a NaN pads with spaces. */
-                spaces.isZero = false;
-                __OpenCRT_Format_Field(aInOut_pSink, &spaces, pPrefix, 0, pWord, 3);
-                return;
-        }
-        if(aIn_pSpec->conversion == 'a' || aIn_pSpec->conversion == 'A')
+                WriteSpecial(aInOut_pSink, aIn_pSpec, &parts, pPrefix);
+        else if(aIn_pSpec->conversion == 'a' || aIn_pSpec->conversion == 'A')
                 WriteHexadecimal(aInOut_pSink, aIn_pSpec, &parts, pPrefix);
         else
                 WriteDecimal(aInOut_pSink, aIn_pSpec, &parts, pPrefix);

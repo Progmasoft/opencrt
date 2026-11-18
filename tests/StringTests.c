@@ -7,12 +7,36 @@
 
 #include "Test.h"
 
-/** @brief memcpy, memmove and memset at every alignment and length up to 40 bytes. */
+/**
+ * @brief Copies with memcpy into a filled buffer and checks every byte of it.
+ *
+ * @param[in] aIn_pSource The source, 64 bytes.
+ * @param[in] aFrom       Where the copy starts in the source.
+ * @param[in] aTo         Where it goes in the destination.
+ * @param[in] aLength     How many bytes.
+ */
 static void
-CopiesAndFills(void)
+CheckCopy(const unsigned char* aIn_pSource, int aFrom, int aTo, int aLength)
+{
+        unsigned char target[ 64 ];
+        int           wrong = 0;
+
+        memset(target, 0xEE, sizeof(target));
+        TEST_CHECK(memcpy(target + aTo, aIn_pSource + aFrom, (size_t) aLength) == target + aTo);
+        for(int i = 0; i < 64; i++)
+        {
+                int inside = i >= aTo && i < aTo + aLength;
+
+                wrong += target[ i ] != (inside ? aIn_pSource[ aFrom + i - aTo ] : 0xEE);
+        }
+        TEST_INTEGER(wrong, 0);
+}
+
+/** @brief memcpy at every alignment of source and destination and every length up to 40 bytes. */
+static void
+CopiesAtEveryAlignment(void)
 {
         unsigned char source[ 64 ];
-        unsigned char target[ 64 ];
 
         for(int i = 0; i < 64; i++)
                 source[ i ] = (unsigned char) (i * 7 + 1);
@@ -21,33 +45,26 @@ CopiesAndFills(void)
                 for(int to = 0; to < 9; to++)
                 {
                         for(int length = 0; length <= 40; length++)
-                        {
-                                for(int i = 0; i < 64; i++)
-                                        target[ i ] = 0xEE;
-                                TEST_CHECK(memcpy(target + to, source + from, (size_t) length)
-                                           == target + to);
-                                for(int i = 0; i < 64; i++)
-                                {
-                                        int inside = i >= to && i < to + length;
-
-                                        if(target[ i ] != (inside ? source[ from + i - to ] : 0xEE))
-                                                Test_Fail(__FILE__,
-                                                          __LINE__,
-                                                          "memcpy copied wrong bytes");
-                                }
-                        }
+                                CheckCopy(source, from, to, length);
                 }
         }
+}
+
+/** @brief memset at every length up to 40 bytes, from an odd address. */
+static void
+Fills(void)
+{
+        unsigned char target[ 64 ];
+
         for(int length = 0; length <= 40; length++)
         {
-                for(int i = 0; i < 64; i++)
-                        target[ i ] = 1;
+                int wrong = 0;
+
+                memset(target, 1, sizeof(target));
                 memset(target + 3, 0xAB, (size_t) length);
                 for(int i = 0; i < 64; i++)
-                {
-                        if(target[ i ] != (i >= 3 && i < 3 + length ? 0xAB : 1))
-                                Test_Fail(__FILE__, __LINE__, "memset wrote wrong bytes");
-                }
+                        wrong += target[ i ] != (i >= 3 && i < 3 + length ? 0xAB : 1);
+                TEST_INTEGER(wrong, 0);
         }
 }
 
@@ -155,7 +172,8 @@ Tokenizes(void)
 }
 
 static const Test_tCase kCases[] = {
-        { "CopiesAndFills", CopiesAndFills },
+        { "CopiesAtEveryAlignment", CopiesAtEveryAlignment },
+        { "Fills", Fills },
         { "MovesOverlappingBytes", MovesOverlappingBytes },
         { "Compares", Compares },
         { "Searches", Searches },

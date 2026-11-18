@@ -174,6 +174,12 @@ ExactMath(void)
         CheckDouble(__LINE__, sqrt(2.0), 1.4142135623730951);
         TEST_CHECK(isnan(sqrt(-1.0)));
         TEST_CHECK(sqrtf(16.0F) == 4.0F);
+}
+
+/** @brief frexp, ldexp, scalbn, modf and fmod, at their edges. */
+static void
+ExactScaling(void)
+{
         int exponent = 0;
 
         CheckDouble(__LINE__, frexp(8.0, &exponent), 0.5);
@@ -212,102 +218,78 @@ ExactMath(void)
         TEST_INTEGER(math_errhandling, MATH_ERREXCEPT);
 }
 
+/** A time and the fields and week numbers it must give, checked against Python's datetime. */
+typedef struct ExpectedTime
+{
+        long long seconds;
+        int       year;
+        int       month;
+        int       day;
+        int       hour;
+        int       minute;
+        int       second;
+        int       weekday;
+        int       yearDay;
+        /** What "%G-W%V-%u %U %W %j %a %b %C %y %g" gives. */
+        const char* pWeeks;
+} tExpectedTime;
+
+static const tExpectedTime kTimes[] = {
+        { 0LL, 70, 0, 1, 0, 0, 0, 4, 0, "1970-W01-4 00 00 001 Thu Jan 19 70 70" },
+        { -1LL, 69, 11, 31, 23, 59, 59, 3, 364, "1970-W01-3 52 52 365 Wed Dec 19 69 70" },
+        { 951782400LL, 100, 1, 29, 0, 0, 0, 2, 59, "2000-W09-2 09 09 060 Tue Feb 20 00 00" },
+        { 1700000000LL, 123, 10, 14, 22, 13, 20, 2, 317, "2023-W46-2 46 46 318 Tue Nov 20 23 23" },
+        { -2208988800LL, 0, 0, 1, 0, 0, 0, 1, 0, "1900-W01-1 00 01 001 Mon Jan 19 00 00" },
+        { 253402300799LL,
+          8099,
+          11,
+          31,
+          23,
+          59,
+          59,
+          5,
+          364,
+          "9999-W52-5 52 52 365 Fri Dec 99 99 99" },
+        { 4102444800LL, 200, 0, 1, 0, 0, 0, 5, 0, "2099-W53-5 00 00 001 Fri Jan 21 00 99" },
+        { -62135596800LL, -1899, 0, 1, 0, 0, 0, 1, 0, "1-W01-1 00 01 001 Mon Jan 00 01 01" },
+        { 1609459199LL, 120, 11, 31, 23, 59, 59, 4, 365, "2020-W53-4 52 52 366 Thu Dec 20 20 20" },
+        { 1230768000LL, 109, 0, 1, 0, 0, 0, 4, 0, "2009-W01-4 00 00 001 Thu Jan 20 09 09" },
+        { 1104537600LL, 105, 0, 1, 0, 0, 0, 6, 0, "2004-W53-6 00 00 001 Sat Jan 20 05 04" },
+        { 1293753600LL, 110, 11, 31, 0, 0, 0, 5, 364, "2010-W52-5 52 52 365 Fri Dec 20 10 10" },
+};
+
 /**
  * @brief Checks gmtime_r, timegm and strftime on one time.
  *
- * @param[in] aSeconds   The time.
- * @param[in] aYear      tm_year.
- * @param[in] aMonth     tm_mon.
- * @param[in] aDay       tm_mday.
- * @param[in] aHour      tm_hour.
- * @param[in] aMinute    tm_min.
- * @param[in] aSecond    tm_sec.
- * @param[in] aWeekday   tm_wday.
- * @param[in] aYearDay   tm_yday.
- * @param[in] aIn_pWeeks What "%G-W%V-%u %U %W %j %a %b %C %y %g" gives.
+ * @param[in] aIn_pExpected The time and what it must give.
  */
 static void
-CheckTime(long long   aSeconds,
-          int         aYear,
-          int         aMonth,
-          int         aDay,
-          int         aHour,
-          int         aMinute,
-          int         aSecond,
-          int         aWeekday,
-          int         aYearDay,
-          const char* aIn_pWeeks)
+CheckTime(const tExpectedTime* aIn_pExpected)
 {
-        time_t    seconds = (time_t) aSeconds;
+        time_t    seconds = (time_t) aIn_pExpected->seconds;
         struct tm fields;
         char      text[ 128 ];
 
         TEST_CHECK(gmtime_r(&seconds, &fields) == &fields);
-        TEST_INTEGER(fields.tm_year, aYear);
-        TEST_INTEGER(fields.tm_mon, aMonth);
-        TEST_INTEGER(fields.tm_mday, aDay);
-        TEST_INTEGER(fields.tm_hour, aHour);
-        TEST_INTEGER(fields.tm_min, aMinute);
-        TEST_INTEGER(fields.tm_sec, aSecond);
-        TEST_INTEGER(fields.tm_wday, aWeekday);
-        TEST_INTEGER(fields.tm_yday, aYearDay);
-        TEST_INTEGER(timegm(&fields), aSeconds);
+        TEST_INTEGER(fields.tm_year, aIn_pExpected->year);
+        TEST_INTEGER(fields.tm_mon, aIn_pExpected->month);
+        TEST_INTEGER(fields.tm_mday, aIn_pExpected->day);
+        TEST_INTEGER(fields.tm_hour, aIn_pExpected->hour);
+        TEST_INTEGER(fields.tm_min, aIn_pExpected->minute);
+        TEST_INTEGER(fields.tm_sec, aIn_pExpected->second);
+        TEST_INTEGER(fields.tm_wday, aIn_pExpected->weekday);
+        TEST_INTEGER(fields.tm_yday, aIn_pExpected->yearDay);
+        TEST_INTEGER(timegm(&fields), aIn_pExpected->seconds);
         strftime(text, sizeof(text), "%G-W%V-%u %U %W %j %a %b %C %y %g", &fields);
-        TEST_STRING(text, aIn_pWeeks);
+        TEST_STRING(text, aIn_pExpected->pWeeks);
 }
 
-/** @brief Dates across eras, leap years and ISO weeks, checked against Python's datetime. */
+/** @brief Dates across eras, leap years and ISO weeks. */
 static void
 Dates(void)
 {
-        CheckTime(0LL, 70, 0, 1, 0, 0, 0, 4, 0, "1970-W01-4 00 00 001 Thu Jan 19 70 70");
-        CheckTime(-1LL, 69, 11, 31, 23, 59, 59, 3, 364, "1970-W01-3 52 52 365 Wed Dec 19 69 70");
-        CheckTime(951782400LL, 100, 1, 29, 0, 0, 0, 2, 59, "2000-W09-2 09 09 060 Tue Feb 20 00 00");
-        CheckTime(1700000000LL,
-                  123,
-                  10,
-                  14,
-                  22,
-                  13,
-                  20,
-                  2,
-                  317,
-                  "2023-W46-2 46 46 318 Tue Nov 20 23 23");
-        CheckTime(-2208988800LL, 0, 0, 1, 0, 0, 0, 1, 0, "1900-W01-1 00 01 001 Mon Jan 19 00 00");
-        CheckTime(253402300799LL,
-                  8099,
-                  11,
-                  31,
-                  23,
-                  59,
-                  59,
-                  5,
-                  364,
-                  "9999-W52-5 52 52 365 Fri Dec 99 99 99");
-        CheckTime(4102444800LL, 200, 0, 1, 0, 0, 0, 5, 0, "2099-W53-5 00 00 001 Fri Jan 21 00 99");
-        CheckTime(-62135596800LL, -1899, 0, 1, 0, 0, 0, 1, 0, "1-W01-1 00 01 001 Mon Jan 00 01 01");
-        CheckTime(1609459199LL,
-                  120,
-                  11,
-                  31,
-                  23,
-                  59,
-                  59,
-                  4,
-                  365,
-                  "2020-W53-4 52 52 366 Thu Dec 20 20 20");
-        CheckTime(1230768000LL, 109, 0, 1, 0, 0, 0, 4, 0, "2009-W01-4 00 00 001 Thu Jan 20 09 09");
-        CheckTime(1104537600LL, 105, 0, 1, 0, 0, 0, 6, 0, "2004-W53-6 00 00 001 Sat Jan 20 05 04");
-        CheckTime(1293753600LL,
-                  110,
-                  11,
-                  31,
-                  0,
-                  0,
-                  0,
-                  5,
-                  364,
-                  "2010-W52-5 52 52 365 Fri Dec 20 10 10");
+        for(size_t index = 0; index < sizeof(kTimes) / sizeof(kTimes[ 0 ]); index++)
+                CheckTime(&kTimes[ index ]);
 }
 
 /** @brief timegm normalizes fields out of range; asctime and strftime write them. */
@@ -352,8 +334,13 @@ Formats(void)
 }
 
 static const Test_tCase kCases[] = {
-        { "WideStrings", WideStrings }, { "Multibyte", Multibyte }, { "WideClasses", WideClasses },
-        { "Locales", Locales },         { "ExactMath", ExactMath }, { "Dates", Dates },
+        { "WideStrings", WideStrings },
+        { "Multibyte", Multibyte },
+        { "WideClasses", WideClasses },
+        { "Locales", Locales },
+        { "ExactMath", ExactMath },
+        { "ExactScaling", ExactScaling },
+        { "Dates", Dates },
         { "Formats", Formats },
 };
 

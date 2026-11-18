@@ -137,7 +137,47 @@ CountingCompare(const void* aIn_pFirst, const void* aIn_pSecond)
         return (CompareInts(aIn_pFirst, aIn_pSecond));
 }
 
-/** @brief qsort sorts every shape of input, and bsearch finds what is there. */
+/**
+ * @brief Fills an array in one of five shapes: ascending, descending, all equal, scattered, and
+ *        alternating ends, the shapes that make a plain quicksort quadratic.
+ *
+ * @param[out] aOut_pValues The array.
+ * @param[in]  aCount       Its size.
+ * @param[in]  aShape       0 to 4.
+ */
+static void
+Fill(int* aOut_pValues, int aCount, int aShape)
+{
+        for(int i = 0; i < aCount; i++)
+        {
+                int values[ 5 ] = { i,
+                                    aCount - i,
+                                    7,
+                                    (int) ((i * 7919U) % (unsigned) aCount),
+                                    i % 2 == 0 ? i : aCount - i };
+
+                aOut_pValues[ i ] = values[ aShape ];
+        }
+}
+
+/**
+ * @brief Counts the places where an array is out of order.
+ *
+ * @param[in] aIn_pValues The array.
+ * @param[in] aCount      Its size.
+ * @return The count.
+ */
+static int
+Inversions(const int* aIn_pValues, int aCount)
+{
+        int count = 0;
+
+        for(int i = 1; i < aCount; i++)
+                count += aIn_pValues[ i - 1 ] > aIn_pValues[ i ];
+        return (count);
+}
+
+/** @brief qsort sorts every shape of input in O(n log n) comparisons, and bsearch finds what is there. */
 static void
 SortsAndSearches(void)
 {
@@ -145,37 +185,10 @@ SortsAndSearches(void)
 
         for(int shape = 0; shape < 5; shape++)
         {
-                for(int i = 0; i < 5000; i++)
-                {
-                        switch(shape)
-                        {
-                        case 0:
-                                values[ i ] = i;
-                                break;
-                        case 1:
-                                values[ i ] = 5000 - i;
-                                break;
-                        case 2:
-                                values[ i ] = 7;
-                                break;
-                        case 3:
-                                values[ i ] = (int) ((i * 7919U) % 5000);
-                                break;
-                        default:
-                                values[ i ] = i % 2 == 0 ? i : 5000 - i;
-                                break;
-                        }
-                }
+                Fill(values, 5000, shape);
                 gsComparisons = 0;
                 qsort(values, 5000, sizeof(int), CountingCompare);
-                for(int i = 1; i < 5000; i++)
-                {
-                        if(values[ i - 1 ] > values[ i ])
-                        {
-                                Test_Fail(__FILE__, __LINE__, "qsort left an inversion");
-                                break;
-                        }
-                }
+                TEST_INTEGER(Inversions(values, 5000), 0);
                 /* n log2 n is about 61000 for 5000; quadratic would be millions. */
                 TEST_CHECK(gsComparisons < 400000);
         }

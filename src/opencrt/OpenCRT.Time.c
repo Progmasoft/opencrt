@@ -357,20 +357,188 @@ Name(const char* const* aIn_ppNames, int aCount, int aIndex)
         return (aIndex >= 0 && aIndex < aCount ? aIn_ppNames[ aIndex ] : "?");
 }
 
-static bool
-Convert(tOutput* aInOut_pOutput, char aConversion, const struct tm* aIn_pTm)
+/* The fields of the numeric conversions. */
+
+/** @brief The century. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+Century(const struct tm* aIn_pTm)
 {
-        char      text[ 8 ];
-        int       week;
         long long year = (long long) aIn_pTm->tm_year + 1900;
 
-        switch(aConversion)
-        {
-        case 'a':
-        case 'A':
-        case 'b':
-        case 'B':
-        case 'h':
+        return (year >= 0 ? year / 100 : -((99 - year) / 100));
+}
+
+/** @brief The day of the month. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+Day(const struct tm* aIn_pTm)
+{
+        return (aIn_pTm->tm_mday);
+}
+
+/** @brief The ISO 8601 week-based year, in two digits. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+IsoYearShort(const struct tm* aIn_pTm)
+{
+        int week;
+
+        return (((IsoWeek(aIn_pTm, &week) % 100) + 100) % 100);
+}
+
+/** @brief The ISO 8601 week-based year. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+IsoYear(const struct tm* aIn_pTm)
+{
+        int week;
+
+        return (IsoWeek(aIn_pTm, &week));
+}
+
+/** @brief The ISO 8601 week. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+IsoWeekNumber(const struct tm* aIn_pTm)
+{
+        int week;
+
+        IsoWeek(aIn_pTm, &week);
+        return (week);
+}
+
+/** @brief The hour, 0 to 23. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+Hour(const struct tm* aIn_pTm)
+{
+        return (aIn_pTm->tm_hour);
+}
+
+/** @brief The hour, 1 to 12. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+Hour12(const struct tm* aIn_pTm)
+{
+        return ((aIn_pTm->tm_hour + 11) % 12 + 1);
+}
+
+/** @brief The day of the year, from 1. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+YearDay(const struct tm* aIn_pTm)
+{
+        return (aIn_pTm->tm_yday + 1);
+}
+
+/** @brief The month, from 1. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+Month(const struct tm* aIn_pTm)
+{
+        return (aIn_pTm->tm_mon + 1);
+}
+
+/** @brief The minute. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+Minute(const struct tm* aIn_pTm)
+{
+        return (aIn_pTm->tm_min);
+}
+
+/** @brief The second. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+Second(const struct tm* aIn_pTm)
+{
+        return (aIn_pTm->tm_sec);
+}
+
+/** @brief The weekday, Monday 1 to Sunday 7. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+IsoWeekday(const struct tm* aIn_pTm)
+{
+        return (aIn_pTm->tm_wday == 0 ? 7 : aIn_pTm->tm_wday);
+}
+
+/** @brief The week of the year, weeks from Sunday. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+SundayWeek(const struct tm* aIn_pTm)
+{
+        return ((aIn_pTm->tm_yday + 7 - aIn_pTm->tm_wday) / 7);
+}
+
+/** @brief The weekday, Sunday 0 to Saturday 6. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+Weekday(const struct tm* aIn_pTm)
+{
+        return (aIn_pTm->tm_wday);
+}
+
+/** @brief The week of the year, weeks from Monday. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+MondayWeek(const struct tm* aIn_pTm)
+{
+        return ((aIn_pTm->tm_yday + 7 - (aIn_pTm->tm_wday + 6) % 7) / 7);
+}
+
+/** @brief The year in two digits. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+YearShort(const struct tm* aIn_pTm)
+{
+        return (((((long long) aIn_pTm->tm_year + 1900) % 100) + 100) % 100);
+}
+
+/** @brief The year. @param[in] aIn_pTm The fields. @return The value. */
+static long long
+Year(const struct tm* aIn_pTm)
+{
+        return ((long long) aIn_pTm->tm_year + 1900);
+}
+
+/** A numeric conversion: its letter, its field, its fewest digits and what pads them. */
+typedef struct Numeric
+{
+        char conversion;
+        long long (*fn_Field)(const struct tm*);
+        int  digits;
+        char pad;
+} tNumeric;
+
+static const tNumeric kNumerics[] = {
+        { 'C', Century, 2, '0' },      { 'd', Day, 2, '0' },           { 'e', Day, 2, ' ' },
+        { 'g', IsoYearShort, 2, '0' }, { 'G', IsoYear, 1, '0' },       { 'H', Hour, 2, '0' },
+        { 'I', Hour12, 2, '0' },       { 'j', YearDay, 3, '0' },       { 'm', Month, 2, '0' },
+        { 'M', Minute, 2, '0' },       { 'S', Second, 2, '0' },        { 'u', IsoWeekday, 1, '0' },
+        { 'U', SundayWeek, 2, '0' },   { 'V', IsoWeekNumber, 2, '0' }, { 'w', Weekday, 1, '0' },
+        { 'W', MondayWeek, 2, '0' },   { 'y', YearShort, 2, '0' },     { 'Y', Year, 1, '0' },
+};
+
+/** A conversion that stands for a format of other conversions, or for fixed text. */
+typedef struct Expansion
+{
+        char        conversion;
+        const char* pFormat;
+} tExpansion;
+
+static const tExpansion kExpansions[] = {
+        { 'c', "%a %b %e %H:%M:%S %Y" },
+        { 'D', "%m/%d/%y" },
+        { 'F', "%Y-%m-%d" },
+        { 'r', "%I:%M:%S %p" },
+        { 'R', "%H:%M" },
+        { 'T', "%H:%M:%S" },
+        { 'x', "%m/%d/%y" },
+        { 'X', "%H:%M:%S" },
+        { 'n', "\n" },
+        { 't', "\t" },
+};
+
+/**
+ * @brief Writes a conversion of names or zones: a, A, b, B, h, p, z or Z.
+ *
+ * @param[in,out] aInOut_pOutput The output.
+ * @param[in]     aConversion    The character after %.
+ * @param[in]     aIn_pTm        The fields.
+ * @return false for another conversion.
+ */
+static bool
+ConvertText(tOutput* aInOut_pOutput, char aConversion, const struct tm* aIn_pTm)
+{
+        char text[ 16 ];
+
+        if(strchr("aA", aConversion) != NULL || strchr("bBh", aConversion) != NULL)
         {
                 bool        isDay = aConversion == 'a' || aConversion == 'A';
                 const char* pName = isDay ? Name(kWeekdays, 7, aIn_pTm->tm_wday)
@@ -380,119 +548,80 @@ Convert(tOutput* aInOut_pOutput, char aConversion, const struct tm* aIn_pTm)
                 Append(aInOut_pOutput, aConversion == 'A' || aConversion == 'B' ? pName : text);
                 return (true);
         }
-        case 'c':
-                Expand(aInOut_pOutput, "%a %b %e %H:%M:%S %Y", aIn_pTm);
-                return (true);
-        case 'C':
-                Number(aInOut_pOutput, year >= 0 ? year / 100 : -((99 - year) / 100), 2, '0');
-                return (true);
-        case 'd':
-                Number(aInOut_pOutput, aIn_pTm->tm_mday, 2, '0');
-                return (true);
-        case 'D':
-                Expand(aInOut_pOutput, "%m/%d/%y", aIn_pTm);
-                return (true);
-        case 'e':
-                Number(aInOut_pOutput, aIn_pTm->tm_mday, 2, ' ');
-                return (true);
-        case 'F':
-                Expand(aInOut_pOutput, "%Y-%m-%d", aIn_pTm);
-                return (true);
-        case 'g':
-                Number(aInOut_pOutput, ((IsoWeek(aIn_pTm, &week) % 100) + 100) % 100, 2, '0');
-                return (true);
-        case 'G':
-                Number(aInOut_pOutput, IsoWeek(aIn_pTm, &week), 1, '0');
-                return (true);
-        case 'H':
-                Number(aInOut_pOutput, aIn_pTm->tm_hour, 2, '0');
-                return (true);
-        case 'I':
-                Number(aInOut_pOutput, (aIn_pTm->tm_hour + 11) % 12 + 1, 2, '0');
-                return (true);
-        case 'j':
-                Number(aInOut_pOutput, aIn_pTm->tm_yday + 1, 3, '0');
-                return (true);
-        case 'm':
-                Number(aInOut_pOutput, aIn_pTm->tm_mon + 1, 2, '0');
-                return (true);
-        case 'M':
-                Number(aInOut_pOutput, aIn_pTm->tm_min, 2, '0');
-                return (true);
-        case 'n':
-                Append(aInOut_pOutput, "\n");
-                return (true);
-        case 'p':
+        if(aConversion == '%')
+                Append(aInOut_pOutput, "%");
+        else if(aConversion == 'p')
                 Append(aInOut_pOutput, aIn_pTm->tm_hour < 12 ? "AM" : "PM");
-                return (true);
-        case 'r':
-                Expand(aInOut_pOutput, "%I:%M:%S %p", aIn_pTm);
-                return (true);
-        case 'R':
-                Expand(aInOut_pOutput, "%H:%M", aIn_pTm);
-                return (true);
-        case 'S':
-                Number(aInOut_pOutput, aIn_pTm->tm_sec, 2, '0');
-                return (true);
-        case 't':
-                Append(aInOut_pOutput, "\t");
-                return (true);
-        case 'T':
-                Expand(aInOut_pOutput, "%H:%M:%S", aIn_pTm);
-                return (true);
-        case 'u':
-                Number(aInOut_pOutput, aIn_pTm->tm_wday == 0 ? 7 : aIn_pTm->tm_wday, 1, '0');
-                return (true);
-        case 'U':
-                Number(aInOut_pOutput, (aIn_pTm->tm_yday + 7 - aIn_pTm->tm_wday) / 7, 2, '0');
-                return (true);
-        case 'V':
-                IsoWeek(aIn_pTm, &week);
-                Number(aInOut_pOutput, week, 2, '0');
-                return (true);
-        case 'w':
-                Number(aInOut_pOutput, aIn_pTm->tm_wday, 1, '0');
-                return (true);
-        case 'W':
-                Number(aInOut_pOutput,
-                       (aIn_pTm->tm_yday + 7 - (aIn_pTm->tm_wday + 6) % 7) / 7,
-                       2,
-                       '0');
-                return (true);
-        case 'x':
-                Expand(aInOut_pOutput, "%m/%d/%y", aIn_pTm);
-                return (true);
-        case 'X':
-                Expand(aInOut_pOutput, "%H:%M:%S", aIn_pTm);
-                return (true);
-        case 'y':
-                Number(aInOut_pOutput, ((year % 100) + 100) % 100, 2, '0');
-                return (true);
-        case 'Y':
-                Number(aInOut_pOutput, year, 1, '0');
-                return (true);
-        case 'z':
+        else if(aConversion == 'Z')
+                Append(aInOut_pOutput, aIn_pTm->tm_zone != NULL ? aIn_pTm->tm_zone : "UTC");
+        else if(aConversion == 'z')
         {
-                long offset = aIn_pTm->tm_gmtoff;
+                long offset = labs(aIn_pTm->tm_gmtoff);
 
                 snprintf(text,
                          sizeof(text),
                          "%c%02ld%02ld",
-                         offset < 0 ? '-' : '+',
-                         labs(offset) / 3600 % 100,
-                         labs(offset) / 60 % 60);
+                         aIn_pTm->tm_gmtoff < 0 ? '-' : '+',
+                         offset / 3600 % 100,
+                         offset / 60 % 60);
                 Append(aInOut_pOutput, text);
-                return (true);
-        }
-        case 'Z':
-                Append(aInOut_pOutput, aIn_pTm->tm_zone != NULL ? aIn_pTm->tm_zone : "UTC");
-                return (true);
-        case '%':
-                Append(aInOut_pOutput, "%");
-                return (true);
-        default:
+        } else
                 return (false);
+        return (true);
+}
+
+static bool
+Convert(tOutput* aInOut_pOutput, char aConversion, const struct tm* aIn_pTm)
+{
+        if(aConversion == '\0')
+                return (false);
+        for(size_t index = 0; index < sizeof(kNumerics) / sizeof(kNumerics[ 0 ]); index++)
+        {
+                const tNumeric* pNumeric = &kNumerics[ index ];
+
+                if(pNumeric->conversion == aConversion)
+                {
+                        Number(aInOut_pOutput,
+                               pNumeric->fn_Field(aIn_pTm),
+                               pNumeric->digits,
+                               pNumeric->pad);
+                        return (true);
+                }
         }
+        for(size_t index = 0; index < sizeof(kExpansions) / sizeof(kExpansions[ 0 ]); index++)
+        {
+                if(kExpansions[ index ].conversion == aConversion)
+                {
+                        Expand(aInOut_pOutput, kExpansions[ index ].pFormat, aIn_pTm);
+                        return (true);
+                }
+        }
+        return (ConvertText(aInOut_pOutput, aConversion, aIn_pTm));
+}
+
+/**
+ * @brief Writes one conversion of a strftime format, or its text when strftime does not have it.
+ *
+ * @param[in,out] aInOut_pOutput The output.
+ * @param[in]     aIn_pAt        The % that starts it.
+ * @param[in]     aIn_pTm        The fields.
+ * @return Where the conversion ends, the last character it used.
+ */
+static const char*
+WriteConversion(tOutput* aInOut_pOutput, const char* aIn_pAt, const struct tm* aIn_pTm)
+{
+        const char* pAt = aIn_pAt + 1;
+
+        /* E and O ask for alternative forms, which the C locale does not have. */
+        if(*pAt == 'E' || *pAt == 'O')
+                pAt++;
+        if(Convert(aInOut_pOutput, *pAt, aIn_pTm))
+                return (pAt);
+        char unknown[ 4 ] = { 0 };
+
+        memcpy(unknown, aIn_pAt, (size_t) (pAt - aIn_pAt) + (*pAt != '\0'));
+        Append(aInOut_pOutput, unknown);
+        return (*pAt != '\0' ? pAt : pAt - 1);
 }
 
 /**
@@ -517,27 +646,14 @@ strftime(char* restrict aOut_pBuffer,
 
         for(const char* pAt = aIn_pFormat; *pAt != '\0' && !output.isFull; pAt++)
         {
-                if(*pAt != '%' || pAt[ 1 ] == '\0')
+                if(*pAt == '%' && pAt[ 1 ] != '\0')
                 {
-                        char literal[ 2 ] = { *pAt, '\0' };
-
-                        Append(&output, literal);
+                        pAt = WriteConversion(&output, pAt, aIn_pTm);
                         continue;
                 }
-                const char* pStart = pAt;
+                char literal[ 2 ] = { *pAt, '\0' };
 
-                pAt++;
-                if(*pAt == 'E' || *pAt == 'O')
-                        pAt++;
-                if(*pAt == '\0' || !Convert(&output, *pAt, aIn_pTm))
-                {
-                        char unknown[ 4 ] = { 0 };
-
-                        memcpy(unknown, pStart, (size_t) (pAt - pStart) + (*pAt != '\0'));
-                        Append(&output, unknown);
-                        if(*pAt == '\0')
-                                break;
-                }
+                Append(&output, literal);
         }
         if(output.isFull || aSize == 0)
                 return (0);

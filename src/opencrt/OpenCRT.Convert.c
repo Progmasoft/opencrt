@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 /** What reading an integer found. */
 typedef struct Integer
@@ -37,10 +38,52 @@ DigitValue(int aCharacter)
 }
 
 /**
- * @brief Reads an integer as strtol does: white space, a sign, a base prefix, digits.
+ * @brief The base of an integer and where its digits start: base 0 reads 0x as hexadecimal, a leading
+ *        0 as octal and anything else as decimal; base 16 also takes 0x.
  *
- * Base 0 reads 0x as hexadecimal, a leading 0 as octal and anything else as decimal; base 16 also
- * takes 0x. A 0x without a hexadecimal digit after it reads as the digit 0.
+ * A 0x without a hexadecimal digit after it is the digit 0, followed by an x that is not read.
+ *
+ * @param[in,out] aInOut_ppAt Where the digits may start; moved past a 0x that is taken.
+ * @param[in]     aBase       0, or 2 to 36.
+ * @return The base.
+ */
+static int
+ReadBase(const unsigned char** aInOut_ppAt, int aBase)
+{
+        const unsigned char* pAt = *aInOut_ppAt;
+        bool hasPrefix = pAt[ 0 ] == '0' && tolower(pAt[ 1 ]) == 'x' && DigitValue(pAt[ 2 ]) < 16;
+
+        if((aBase == 0 || aBase == 16) && hasPrefix)
+        {
+                *aInOut_ppAt += 2;
+                return (16);
+        }
+        if(aBase == 0)
+                return (pAt[ 0 ] == '0' ? 8 : 10);
+        return (aBase);
+}
+
+/**
+ * @brief Reads the digits of an integer.
+ *
+ * @param[in,out] aInOut_ppAt Where they start; moved past them.
+ * @param[in]     aBase       The base.
+ * @param[out]    aOut_pValue The magnitude and whether it overflowed.
+ */
+static void
+ReadDigits(const unsigned char** aInOut_ppAt, int aBase, tInteger* aOut_pValue)
+{
+        for(int digit; (digit = DigitValue(**aInOut_ppAt)) < aBase; (*aInOut_ppAt)++)
+        {
+                if(aOut_pValue->magnitude > (ULLONG_MAX - (unsigned) digit) / (unsigned) aBase)
+                        aOut_pValue->didOverflow = true;
+                aOut_pValue->magnitude = aOut_pValue->magnitude * (unsigned) aBase
+                        + (unsigned) digit;
+        }
+}
+
+/**
+ * @brief Reads an integer as strtol does: white space, a sign, a base prefix, digits.
  *
  * @param[in]  aIn_pText   The text.
  * @param[out] aOut_ppEnd  Where reading stopped, or NULL: the text itself when no digit was read.
@@ -53,9 +96,7 @@ ReadInteger(const char* aIn_pText, char** aOut_ppEnd, int aBase, tInteger* aOut_
 {
         const unsigned char* pAt = (const unsigned char*) aIn_pText;
 
-        aOut_pValue->magnitude   = 0;
-        aOut_pValue->isNegative  = false;
-        aOut_pValue->didOverflow = false;
+        memset(aOut_pValue, 0, sizeof(*aOut_pValue));
         if(aOut_ppEnd != NULL)
                 *aOut_ppEnd = (char*) aIn_pText;
         if(aBase < 0 || aBase == 1 || aBase > 36)
@@ -67,28 +108,13 @@ ReadInteger(const char* aIn_pText, char** aOut_ppEnd, int aBase, tInteger* aOut_
                 pAt++;
         if(*pAt == '+' || *pAt == '-')
                 aOut_pValue->isNegative = *pAt++ == '-';
-        if((aBase == 0 || aBase == 16) && pAt[ 0 ] == '0' && tolower(pAt[ 1 ]) == 'x'
-           && DigitValue(pAt[ 2 ]) < 16)
-        {
-                pAt  += 2;
-                aBase = 16;
-        } else if(aBase == 0)
-                aBase = pAt[ 0 ] == '0' ? 8 : 10;
+        aBase                        = ReadBase(&pAt, aBase);
         const unsigned char* pDigits = pAt;
 
-        for(int digit; (digit = DigitValue(*pAt)) < aBase; pAt++)
-        {
-                if(aOut_pValue->magnitude > (ULLONG_MAX - (unsigned) digit) / (unsigned) aBase)
-                        aOut_pValue->didOverflow = true;
-                aOut_pValue->magnitude = aOut_pValue->magnitude * (unsigned) aBase
-                        + (unsigned) digit;
-        }
+        ReadDigits(&pAt, aBase, aOut_pValue);
         if(pAt == pDigits)
-        {
                 aOut_pValue->isNegative = false;
-                return (true);
-        }
-        if(aOut_ppEnd != NULL)
+        else if(aOut_ppEnd != NULL)
                 *aOut_ppEnd = (char*) pAt;
         return (true);
 }

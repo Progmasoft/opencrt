@@ -30,13 +30,15 @@ static struct lconv gsConventions = {
 char*
 setlocale(int aCategory, const char* aIn_pName)
 {
-        static char sName[] = "C";
-
         if(aCategory < LC_ALL || aCategory > LC_MESSAGES)
                 return (NULL);
         if(aIn_pName == NULL || aIn_pName[ 0 ] == '\0' || strcmp(aIn_pName, "C") == 0
            || strcmp(aIn_pName, "POSIX") == 0)
+        {
+                static char sName[] = "C";
+
                 return (sName);
+        }
         return (NULL);
 }
 

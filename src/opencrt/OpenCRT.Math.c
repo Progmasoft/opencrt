@@ -336,7 +336,10 @@ lround(double aValue)
 {
         double whole = round(aValue);
 
-        if(!(whole >= -0x1p63 && whole < 0x1p63))
+        /* 2^63, the first double above the range of long. */
+        const double limit = 9223372036854775808.0;
+
+        if(isnan(whole) || whole < -limit || whole >= limit)
                 return (LONG_MIN);
         return ((long) whole);
 }
@@ -512,6 +515,30 @@ modf(double aValue, double* aOut_pInteger)
 }
 
 /**
+ * @brief The significand of a finite double that is not zero as an integer with its leading bit at
+ *        52, and its biased exponent: a subnormal's bits are shifted up and its exponent lowered.
+ *
+ * @param[in]  aBits          The bits of the value.
+ * @param[out] aOut_pExponent The biased exponent, below 1 for a subnormal.
+ * @return The significand.
+ */
+static uint64_t
+Normalized(uint64_t aBits, int* aOut_pExponent)
+{
+        int      exponent    = (int) ((aBits >> 52) & 0x7FF);
+        uint64_t significand = aBits & ((UINT64_C(1) << 52) - 1);
+
+        if(exponent != 0)
+                significand |= UINT64_C(1) << 52;
+        else
+                exponent = 1;
+        for(; (significand >> 52) == 0; exponent--)
+                significand <<= 1;
+        *aOut_pExponent = exponent;
+        return (significand);
+}
+
+/**
  * @brief The remainder of x / y with the quotient rounded toward zero, exact.
  *
  * @param[in] aDividend x.
@@ -525,36 +552,21 @@ fmod(double aDividend, double aDivisor)
                 return ((aDividend * aDivisor) / (aDividend * aDivisor));
         if(isinf(aDivisor) || fabs(aDividend) < fabs(aDivisor))
                 return (aDividend);
-        uint64_t xBits     = BitsOf(aDividend);
-        uint64_t yBits     = BitsOf(aDivisor);
-        int      xExponent = (int) ((xBits >> 52) & 0x7FF);
-        int      yExponent = (int) ((yBits >> 52) & 0x7FF);
-        uint64_t x         = xBits & ((UINT64_C(1) << 52) - 1);
-        uint64_t y         = yBits & ((UINT64_C(1) << 52) - 1);
+        int      xExponent;
+        int      yExponent;
+        uint64_t x = Normalized(BitsOf(aDividend), &xExponent);
+        uint64_t y = Normalized(BitsOf(aDivisor), &yExponent);
 
-        /* Integer significands with the implicit bit; a subnormal's exponent counts as 1. */
-        x         = xExponent == 0 ? x : x | (UINT64_C(1) << 52);
-        y         = yExponent == 0 ? y : y | (UINT64_C(1) << 52);
-        xExponent = xExponent == 0 ? 1 : xExponent;
-        yExponent = yExponent == 0 ? 1 : yExponent;
-        /* Shift a subnormal up so both leading bits sit at 52: at equal exponents x is below 2y. */
-        for(; (x >> 52) == 0; xExponent--)
-                x <<= 1;
-        for(; (y >> 52) == 0; yExponent--)
-                y <<= 1;
-        /* Long division, one binary place at a time, keeping only the remainder. */
+        /* Long division, one binary place at a time, keeping only the remainder: with both leading
+         * bits at 52, x stays below 2y at each step. */
         for(; xExponent > yExponent; xExponent--)
         {
-                if(x >= y)
-                        x -= y;
+                x   = x >= y ? x - y : x;
                 x <<= 1;
         }
-        if(x >= y)
-                x -= y;
-        if(x == 0)
-                return (copysign(0.0, aDividend));
+        x = x >= y ? x - y : x;
         /* x * 2^(yExponent - 1075) is the remainder; scalbn rounds nothing, as it fits. */
-        return (copysign(scalbn((double) x, yExponent - 1075), aDividend));
+        return (copysign(x == 0 ? 0.0 : scalbn((double) x, yExponent - 1075), aDividend));
 }
 
 /**
