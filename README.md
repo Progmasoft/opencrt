@@ -26,6 +26,14 @@ do not use, the standard wins, and the contributing guide lists each such deviat
 `long double` follows the Darwin ABI of OpenTala: the x87 80-bit extended format on amd64 and IEEE 754 binary64 on
 aarch64. `printf`, `strtold` and the `<math.h>` functions with the `l` suffix use those formats.
 
+## The dynamic linker
+
+OpenCRT also holds the dynamic linker, which the kernel starts for every program that names it with
+`LC_LOAD_DYLINKER`: it maps the libraries a program needs, applies their fixups (chained fixups included), sets up
+thread-local variables and calls the program's entry point. It is installed as `/usr/lib/dyld`, and the library as
+`/usr/lib/libSystem.B.dylib`, the names Darwin's tools write into programs. Keeping both in one repository keeps the
+parts they share, such as the layout of thread-local data and the start of a process, from drifting apart.
+
 ## What it has
 
 The parts that need no system call: the freestanding headers; `<string.h>`, `<strings.h>`, `<ctype.h>`; the
