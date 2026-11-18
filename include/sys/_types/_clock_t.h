@@ -1,0 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Progmasoft <support@progmasoft.com>
+ * SPDX-License-Identifier: MIT
+ */
+
+#pragma once
+
+typedef unsigned long clock_t;
