@@ -111,10 +111,10 @@ Test_CheckString(const char* aIn_pFile,
                  const char* aIn_pActual,
                  const char* aIn_pExpected)
 {
-        long index = 0;
-
         if(aIn_pActual != 0)
         {
+                long index = 0;
+
                 while(aIn_pActual[ index ] == aIn_pExpected[ index ]
                       && aIn_pExpected[ index ] != '\0')
                         index++;

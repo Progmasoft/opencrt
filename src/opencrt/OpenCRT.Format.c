@@ -139,6 +139,71 @@ Digits(unsigned long long aMagnitude, unsigned aBase, bool aIsUpper, char* aOut_
 }
 
 /**
+ * @brief The base of an integer conversion.
+ *
+ * @param[in] aConversion d, i, u, o, x or X.
+ * @return 8, 10 or 16.
+ */
+static unsigned
+BaseOf(char aConversion)
+{
+        if(aConversion == 'o')
+                return (8);
+        return (aConversion == 'x' || aConversion == 'X' ? 16 : 10);
+}
+
+/**
+ * @brief The prefix of an integer conversion: a sign for d and i, 0x or 0X for # with x or X.
+ *
+ * @param[in] aIn_pSpec    The specification.
+ * @param[in] aIsNegative  Whether the value is negative.
+ * @param[in] aIsZero      Whether the value is zero.
+ * @return The prefix.
+ */
+static const char*
+IntegerPrefix(const __OpenCRT_Format_tSpec* aIn_pSpec, bool aIsNegative, bool aIsZero)
+{
+        char conversion = aIn_pSpec->conversion;
+
+        if(conversion == 'd' || conversion == 'i')
+                return (aIsNegative                  ? "-"
+                                : aIn_pSpec->isPlus  ? "+"
+                                : aIn_pSpec->isSpace ? " "
+                                                     : "");
+        if(aIn_pSpec->isAlternate && BaseOf(conversion) == 16 && !aIsZero)
+                return (conversion == 'X' ? "0X" : "0x");
+        return ("");
+}
+
+/**
+ * @brief The zeros between the prefix and the digits: for the precision, for # with o, and for
+ *        the 0 flag up to the width.
+ *
+ * @param[in] aIn_pSpec    The specification.
+ * @param[in] aIn_pDigits  The digits.
+ * @param[in] aLength      How many.
+ * @param[in] aPrefix      The length of the prefix.
+ * @return How many zeros.
+ */
+static size_t
+IntegerZeros(const __OpenCRT_Format_tSpec* aIn_pSpec,
+             const char*                   aIn_pDigits,
+             size_t                        aLength,
+             size_t                        aPrefix)
+{
+        size_t precision = aIn_pSpec->precision < 0 ? 1 : (size_t) aIn_pSpec->precision;
+        size_t zeros     = precision > aLength ? precision - aLength : 0;
+
+        /* # puts a 0 before octal digits that do not already start with one. */
+        if(aIn_pSpec->isAlternate && aIn_pSpec->conversion == 'o' && zeros == 0)
+                zeros = aLength == 0 || aIn_pDigits[ 0 ] != '0';
+        size_t used     = aPrefix + zeros + aLength;
+        bool   isFilled = aIn_pSpec->isZero && !aIn_pSpec->isLeft && aIn_pSpec->precision < 0;
+
+        return (isFilled && aIn_pSpec->width > used ? zeros + aIn_pSpec->width - used : zeros);
+}
+
+/**
  * @brief Writes an integer conversion: d, i, u, o, x or X.
  *
  * @param[in,out] aInOut_pSink The sink.
@@ -148,34 +213,19 @@ Digits(unsigned long long aMagnitude, unsigned aBase, bool aIsUpper, char* aOut_
 static void
 WriteInteger(__OpenCRT_Format_tSink* aInOut_pSink, const tRaw* aIn_pRaw, long long aValue)
 {
-        const __OpenCRT_Format_tSpec* pSpec      = &aIn_pRaw->spec;
-        char                          conversion = pSpec->conversion;
+        const __OpenCRT_Format_tSpec* pSpec = &aIn_pRaw->spec;
         bool                          isNegative;
         unsigned long long            magnitude = Magnitude(aIn_pRaw, aValue, &isNegative);
-        unsigned    base = conversion == 'o' ? 8 : strchr("xX", conversion) != NULL ? 16 : 10;
-        char        buffer[ 24 ];
-        size_t      length    = Digits(magnitude, base, conversion == 'X', buffer + sizeof(buffer));
-        size_t      precision = pSpec->precision < 0 ? 1 : (size_t) pSpec->precision;
-        size_t      zeros     = precision > length ? precision - length : 0;
-        const char* pPrefix   = "";
+        char                          buffer[ 24 ];
+        size_t                        length  = Digits(magnitude,
+                                                       BaseOf(pSpec->conversion),
+                                                       pSpec->conversion == 'X',
+                                                       buffer + sizeof(buffer));
+        const char*                   pDigits = buffer + sizeof(buffer) - length;
+        const char*                   pPrefix = IntegerPrefix(pSpec, isNegative, magnitude == 0);
+        size_t                        zeros = IntegerZeros(pSpec, pDigits, length, strlen(pPrefix));
 
-        if(conversion == 'd' || conversion == 'i')
-                pPrefix = isNegative ? "-" : pSpec->isPlus ? "+" : pSpec->isSpace ? " " : "";
-        /* # puts a 0 before octal digits that do not already start with one, and 0x before hexadecimal. */
-        if(pSpec->isAlternate && base == 8 && zeros == 0)
-                zeros = length == 0 || buffer[ sizeof(buffer) - length ] != '0';
-        if(pSpec->isAlternate && base == 16 && magnitude != 0)
-                pPrefix = conversion == 'X' ? "0X" : "0x";
-        size_t used = strlen(pPrefix) + zeros + length;
-
-        if(pSpec->isZero && !pSpec->isLeft && pSpec->precision < 0 && pSpec->width > used)
-                zeros += pSpec->width - used;
-        __OpenCRT_Format_Field(aInOut_pSink,
-                               pSpec,
-                               pPrefix,
-                               zeros,
-                               buffer + sizeof(buffer) - length,
-                               length);
+        __OpenCRT_Format_Field(aInOut_pSink, pSpec, pPrefix, zeros, pDigits, length);
 }
 
 /**
@@ -216,8 +266,8 @@ WriteWideString(__OpenCRT_Format_tSink*       aInOut_pSink,
                 const wchar_t*                aIn_pWide)
 {
         size_t    limit = aIn_pSpec->precision < 0 ? (size_t) -1 : (size_t) aIn_pSpec->precision;
-        char      bytes[ 256 ];
-        size_t    length = 0;
+        char      bytes[ 256 ] = { 0 };
+        size_t    length       = 0;
         mbstate_t state;
 
         memset(&state, 0, sizeof(state));

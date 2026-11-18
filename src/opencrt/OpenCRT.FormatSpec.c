@@ -119,29 +119,25 @@ ReadLength(const char** aInOut_ppAt)
         return (kSingles[ pLetter - kLetters ]);
 }
 
-/**
- * @brief The type of an integer argument for a length modifier.
- *
- * @param[in] aLength The modifier.
- * @return The type, or kNone for L.
- */
-static tKind
-IntegerKind(tLength aLength)
+/** The classes of conversions, which share the types they read. */
+enum
 {
-        static const tKind kKinds[] = {
-                [kDefault]          = kInt,
-                [kChar]             = kInt,
-                [kShort]            = kInt,
-                [kLongLength]       = kLong,
-                [kLongLongLength]   = kLongLong,
-                [kIntMaxLength]     = kIntMax,
-                [kSizeLength]       = kSize,
-                [kPtrdiffLength]    = kPtrdiff,
-                [kLongDoubleLength] = kNone,
-        };
+        kIntegerClass,
+        kFloatClass,
+        kCharacterClass,
+        kStringClass,
+        kPointerClass,
+        kClassCount,
+};
 
-        return (kKinds[ aLength ]);
-}
+/** The type each class reads for each length modifier, kNone where they do not go together. */
+static const tKind kKindsByClass[ kClassCount ][ kLongDoubleLength + 1 ] = {
+        [kIntegerClass] = { kInt, kInt, kInt, kLong, kLongLong, kIntMax, kSize, kPtrdiff, kNone },
+        [kFloatClass] = { kDouble, kNone, kNone, kDouble, kNone, kNone, kNone, kNone, kLongDouble },
+        [kCharacterClass] = { kInt, kNone, kNone, kWideChar, kNone, kNone, kNone, kNone, kNone },
+        [kStringClass]    = { kPointer, kNone, kNone, kPointer, kNone, kNone, kNone, kNone, kNone },
+        [kPointerClass]   = { kPointer, kNone, kNone, kNone, kNone, kNone, kNone, kNone, kNone },
+};
 
 /**
  * @brief The type the value of a conversion is read as.
@@ -152,23 +148,55 @@ IntegerKind(tLength aLength)
 tKind
 __OpenCRT_FormatSpec_KindOf(const tRaw* aIn_pRaw)
 {
-        char    conversion = aIn_pRaw->spec.conversion;
-        tLength length     = aIn_pRaw->length;
+        static const char* const kConversions[ kClassCount ]
+                = { "diouxX", "fFeEgGaA", "c", "s", "p" };
+        char conversion = aIn_pRaw->spec.conversion;
 
-        if(conversion == '\0')
-                return (kNone);
-        if(strchr("diouxX", conversion) != NULL)
-                return (IntegerKind(length));
-        if(strchr("fFeEgGaA", conversion) != NULL)
-                return (length == kLongDoubleLength ? kLongDouble
-                                : length <= kLongLength && length != kChar && length != kShort
-                                ? kDouble
-                                : kNone);
-        if(conversion == 'c' && (length == kDefault || length == kLongLength))
-                return (length == kDefault ? kInt : kWideChar);
-        if(conversion == 's' && (length == kDefault || length == kLongLength))
-                return (kPointer);
-        return (conversion == 'p' && length == kDefault ? kPointer : kNone);
+        for(int index = 0; conversion != '\0' && index < kClassCount; index++)
+        {
+                if(strchr(kConversions[ index ], conversion) != NULL)
+                        return (kKindsByClass[ index ][ aIn_pRaw->length ]);
+        }
+        return (kNone);
+}
+
+/**
+ * @brief Reads the conversion character, taking XSI's %C and %S as %lc and %ls.
+ *
+ * @param[in,out] aInOut_ppAt Where it is; moved past it.
+ * @param[in,out] aInOut_pRaw The specification, with its length modifier.
+ */
+static void
+ReadConversion(const char** aInOut_ppAt, tRaw* aInOut_pRaw)
+{
+        char conversion = **aInOut_ppAt;
+
+        if(conversion != '\0')
+                (*aInOut_ppAt)++;
+        if((conversion == 'C' || conversion == 'S') && aInOut_pRaw->length == kDefault)
+        {
+                conversion          = conversion == 'C' ? 'c' : 's';
+                aInOut_pRaw->length = kLongLength;
+        }
+        aInOut_pRaw->spec.conversion = conversion;
+}
+
+/**
+ * @brief Whether OpenCRT takes a specification: positions in range, a width and a precision that
+ *        fit an int, and a conversion that goes with its modifier.
+ *
+ * @param[in] aIn_pRaw The specification.
+ * @param[in] aWidth   The width as read.
+ * @return true when it does.
+ */
+static bool
+IsValid(const tRaw* aIn_pRaw, long aWidth)
+{
+        if(aIn_pRaw->position < 0 || aIn_pRaw->widthPosition < 0 || aIn_pRaw->precisionPosition < 0)
+                return (false);
+        if(aWidth > INT_MAX || aIn_pRaw->spec.precision > INT_MAX)
+                return (false);
+        return (__OpenCRT_FormatSpec_KindOf(aIn_pRaw) != kNone);
 }
 
 /**
@@ -199,22 +227,8 @@ __OpenCRT_FormatSpec_Read(const char** aInOut_ppAt, tRaw* aOut_pRaw)
                            &aOut_pRaw->precisionPosition);
         }
         aOut_pRaw->length = ReadLength(aInOut_ppAt);
-        char conversion   = **aInOut_ppAt;
-
-        if(conversion != '\0')
-                (*aInOut_ppAt)++;
-        /* XSI: %C and %S are %lc and %ls. */
-        if((conversion == 'C' || conversion == 'S') && aOut_pRaw->length == kDefault)
-        {
-                conversion        = conversion == 'C' ? 'c' : 's';
-                aOut_pRaw->length = kLongLength;
-        }
-        aOut_pRaw->spec.conversion = conversion;
-        bool hasValidPlaces        = aOut_pRaw->position >= 0 && aOut_pRaw->widthPosition >= 0
-                && aOut_pRaw->precisionPosition >= 0;
-
-        return (hasValidPlaces && width <= INT_MAX && aOut_pRaw->spec.precision <= INT_MAX
-                && __OpenCRT_FormatSpec_KindOf(aOut_pRaw) != kNone);
+        ReadConversion(aInOut_ppAt, aOut_pRaw);
+        return (IsValid(aOut_pRaw, width));
 }
 
 /**
@@ -342,6 +356,40 @@ NextSpec(const char** aInOut_ppAt, tRaw* aOut_pRaw, bool* aOut_pIsValid)
 }
 
 /**
+ * @brief Reads every specification of a format, recording the types of the positions they use.
+ *
+ * @param[in]  aIn_pFormat     The format.
+ * @param[out] aOut_pKinds     The type of each position.
+ * @param[out] aOut_pHighest   The highest position used.
+ * @param[out] aOut_pIsPlaced  Whether the format uses positions.
+ * @return false for a format OpenCRT refuses, positions mixed with plain conversions included.
+ */
+static bool
+Scan(const char* aIn_pFormat,
+     tKind       aOut_pKinds[ OPENCRT_FORMATSPEC_POSITIONS + 1 ],
+     int*        aOut_pHighest,
+     bool*       aOut_pIsPlaced)
+{
+        int         counts[ 2 ] = { 0, 0 };
+        const char* pAt         = aIn_pFormat;
+        tRaw        raw;
+        bool        isValid = true;
+
+        while(isValid && NextSpec(&pAt, &raw, &isValid))
+        {
+                bool isPlaced = raw.position != 0;
+
+                counts[ isPlaced ]++;
+                if(!isValid)
+                        break;
+                isValid = isPlaced ? ClaimPositions(&raw, aOut_pKinds, aOut_pHighest)
+                                   : raw.widthPosition == 0 && raw.precisionPosition == 0;
+        }
+        *aOut_pIsPlaced = counts[ 1 ] > 0;
+        return (isValid && (counts[ 0 ] == 0 || counts[ 1 ] == 0));
+}
+
+/**
  * @brief Checks every specification of a format and, for positions, reads every argument first.
  *
  * @param[in]     aIn_pFormat       The format.
@@ -351,26 +399,11 @@ NextSpec(const char** aInOut_ppAt, tRaw* aOut_pRaw, bool* aOut_pIsValid)
 bool
 __OpenCRT_FormatSpec_Prepare(const char* aIn_pFormat, tArguments* aInOut_pArguments)
 {
-        tKind       kinds[ OPENCRT_FORMATSPEC_POSITIONS + 1 ] = { kNone };
-        int         highest                                   = 0;
-        int         counts[ 2 ]                               = { 0, 0 };
-        const char* pAt                                       = aIn_pFormat;
-        tRaw        raw;
-        bool        isValid = true;
+        tKind kinds[ OPENCRT_FORMATSPEC_POSITIONS + 1 ] = { kNone };
+        int   highest                                   = 0;
 
-        while(isValid && NextSpec(&pAt, &raw, &isValid))
-        {
-                bool isPlaced = raw.position != 0;
-
-                counts[ isPlaced ]++;
-                if(isValid && isPlaced)
-                        isValid = ClaimPositions(&raw, kinds, &highest);
-                else if(isValid)
-                        isValid = raw.widthPosition == 0 && raw.precisionPosition == 0;
-        }
-        if(!isValid || (counts[ 0 ] > 0 && counts[ 1 ] > 0))
+        if(!Scan(aIn_pFormat, kinds, &highest, &aInOut_pArguments->isPositional))
                 return (false);
-        aInOut_pArguments->isPositional = counts[ 1 ] > 0;
         for(int position = 1; position <= highest; position++)
         {
                 if(kinds[ position ] == kNone)
