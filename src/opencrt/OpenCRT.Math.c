@@ -554,7 +554,8 @@ FmodSpecial(double aDividend, double aDivisor, double* aOut_pResult)
         if(isnan(aDividend) || isnan(aDivisor) || isinf(aDividend) || aDivisor == 0)
         {
                 /* 0 / 0 or infinity / infinity in the arithmetic, so the exception is raised. */
-                *aOut_pResult = (aDividend * aDivisor) / (aDivisor * aDividend);
+                const double product = aDividend * aDivisor;
+                *aOut_pResult        = product / product;
                 return (true);
         }
         *aOut_pResult = aDividend;

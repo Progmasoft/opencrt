@@ -212,6 +212,12 @@ ExactRemainders(void)
         CheckDouble(__LINE__, fmod(0x1p-1070, 0x1p-1073), 0.0);
         CheckDouble(__LINE__, fmod(3.0, INFINITY), 3.0);
         TEST_CHECK(isnan(fmod(1.0, 0.0)) && isnan(fmod(INFINITY, 2.0)));
+}
+
+/** @brief The long double and float rounding functions, and the classification of a subnormal. */
+static void
+RoundingAndClasses(void)
+{
         TEST_CHECK(isnan(nan("")));
         TEST_CHECK(floorl(-2.5L) == -3.0L && ceill(2.25L) == 3.0L && roundl(-0.5L) == -1.0L);
         TEST_CHECK(truncl(0x1p62L + 0.5L) == 0x1p62L && truncl(-0.75L) == 0.0L
@@ -347,6 +353,7 @@ static const Test_tCase kCases[] = {
         { "ExactMath", ExactMath },
         { "ExactScaling", ExactScaling },
         { "ExactRemainders", ExactRemainders },
+        { "RoundingAndClasses", RoundingAndClasses },
         { "Dates", Dates },
         { "Formats", Formats },
 };
