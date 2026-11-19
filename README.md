@@ -4,13 +4,15 @@
 # OpenCRT
 
 OpenCRT, the Open C Runtime, is the C library of TalaOS: the C standard library and the Unix standard library, on
-[OpenTala](https://github.com/Progmasoft/opentala). Unix and POSIX compatibility comes first.
+[OpenTala](https://github.com/Progmasoft/opentala). Unix and POSIX compatibility comes first; the POSIX it follows is
+[POSIX.1-2024](https://pubs.opengroup.org/onlinepubs/9799919799/) (IEEE Std 1003.1-2024, Issue 8).
 
 It is written in C99 and built with BSD Make.
 
 ## What the standards decide, and what the guidelines decide
 
-The interface of OpenCRT is the one the C standard and POSIX define, and nothing in it is renamed or reshaped:
+The interface of OpenCRT is the one the C standard and POSIX.1-2024 define, and nothing in it is renamed or
+reshaped:
 
 - the header names, `<stdio.h>`, `<unistd.h>`, `<sys/types.h>`;
 - the names, types, macros and signatures of the interface, `printf`, `FILE`, `EOF`, `errno`, `size_t`, `O_RDONLY`;
